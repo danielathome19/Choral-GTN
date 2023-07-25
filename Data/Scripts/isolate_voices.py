@@ -1,7 +1,7 @@
 # For ever folder in the VoiceParts directory, iterate through each MIDI file in the folder.
 # In each folder, make a subfolder called "Isolated".
 # For each MIDI file, if there is only one voice part, copy the file to the "Isolated" subfolder.
-# Otherwise, if there are multiple voices in the MIDI, isolate the loudest voice and copy it to the "Isolated" folder.
+# Otherwise, if there are multiple voices in the MIDI, isolate the intended voice and copy it to the "Isolated" folder.
 
 import os
 import mido
