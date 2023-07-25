@@ -1,1 +1,0 @@
-Some of the songs have more than the melody voice -- find a way to extract only the (loudest?) voice that matches the specified part
