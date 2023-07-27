@@ -6,3 +6,6 @@ https://www.uma.es/victoria/varios.html
 https://www.uma.es/victoria/vasquez.html
 https://www.uma.es/victoria/guerrero.html
 https://www.uma.es/victoria/partituras.html
+
+Workflow:
+scrape -> check_folders -> build_report -> filter_parts -> isolate_voices -> feature extraction
