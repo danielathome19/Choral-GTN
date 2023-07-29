@@ -34,7 +34,7 @@ if not sys.warnoptions:
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-def train_duration_model(dataset="Soprano"):
+def train_duration_model(dataset="Soprano", epochs=100):
     """Trains the note duration model for the specified dataset"""
     df = pd.read_csv(f"Data\\Tabular\\{dataset}.csv", sep=';')
     df = df[['event', 'time']]
@@ -68,7 +68,7 @@ def train_duration_model(dataset="Soprano"):
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
-    # Define the model (Bi-Directonal LSTM)
+    # Bi-Directonal LSTM
     model = Sequential()
     model.add(layers.Bidirectional(layers.LSTM(64, return_sequences=True), input_shape=(max_event_len, 2)))
     model.add(layers.Bidirectional(layers.LSTM(64, return_sequences=True)))
@@ -78,9 +78,9 @@ def train_duration_model(dataset="Soprano"):
     model.summary()
     plot_model(model, to_file=f'Images\\{dataset}_duration_model.png', show_shapes=True, show_layer_names=True)
 
-    model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test))
+    model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_data=(X_test, y_test))
 
-    # Save the model, scaler, and max lengths
+    # Save the model, scaler, and max length (all 3 max lengths should be the same)
     model.save(f"Weights\\Duration\\{dataset}.h5")
     pkl.dump(scaler, open(f"Weights\\Duration\\{dataset}_scaler.pkl", 'wb'))
     pkl.dump(max_event_len, open(f"Weights\\Duration\\{dataset}_seq_len.pkl", 'wb'))
@@ -123,5 +123,7 @@ def train_duration_model(dataset="Soprano"):
 
 if __name__ == '__main__':
     print("Hello world!")
-    train_duration_model(dataset="Soprano")
+    voices = ["Soprano", "Alto", "Tenor", "Bass"]
+    for dataset in voices:
+        train_duration_model(dataset)
     # train()
