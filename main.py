@@ -123,7 +123,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
 
 if __name__ == '__main__':
     print("Hello world!")
-    voices = ["Soprano", "Alto", "Tenor", "Bass"]
-    for dataset in voices:
-        train_duration_model(dataset)
+    voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
+    for voice_dataset in voices_datasets:
+        train_duration_model(voice_dataset)
     # train()
