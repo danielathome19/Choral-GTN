@@ -65,7 +65,6 @@ def train_duration_model(dataset="Soprano", epochs=100):
     # The model will take in the event and the previous time as input and predict the next time
     df['time_prev'] = df['time'].apply(lambda x: np.concatenate([[0], x[:-1]]))
     df['time_next'] = df['time'].apply(lambda x: np.concatenate([x[1:], [0]]))
-
     inputs = np.array(df[['event', 'time_prev']])
     outputs = np.array(df['time_next'])
 
@@ -74,12 +73,12 @@ def train_duration_model(dataset="Soprano", epochs=100):
     max_event_len = max([len(x[0]) for x in inputs])
     max_time_len = max([len(x[1]) for x in inputs])
     max_output_len = max([len(x) for x in outputs])
-    inputs_e = np.array([np.concatenate([x, np.full(max_event_len - len(x), -1)]).astype(int)
+    inputs_e = np.array([np.concatenate([x, np.full(max_event_len-len(x), -1)]).astype(int)
                          for x in np.array(df['event'])])
-    inputs_t = np.array([np.concatenate([x, np.full(max_time_len - len(x), 0.)]).astype(float)
+    inputs_t = np.array([np.concatenate([x, np.full(max_time_len-len(x), 0.)]).astype(float)
                          for x in np.array(df['time_prev'])])
     inputs = np.stack((inputs_e, inputs_t), axis=-1)
-    outputs = np.array([np.concatenate([x, np.full(max_output_len - len(x), 0.)]).astype(float) for x in outputs])
+    outputs = np.array([np.concatenate([x, np.full(max_output_len-len(x), 0.)]).astype(float) for x in outputs])
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
@@ -89,7 +88,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
     model.add(layers.Bidirectional(layers.LSTM(64, return_sequences=True)))
     model.add(layers.TimeDistributed(layers.Dense(64, activation='relu')))
     model.add(layers.TimeDistributed(layers.Dense(1, activation='linear')))
-    model.compile(loss='mse', optimizer='adam', metrics=['mse', 'mae'])
+    model.compile(loss='mse', optimizer='adam', metrics=['mae'])
     model.summary()
     plot_model(model, to_file=f'Images\\{dataset}_duration_model.png', show_shapes=True, show_layer_names=True)
 
@@ -99,7 +98,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
 
     # Save the model, scaler, and max length (all 3 max lengths should be the same)
     model.save(f"Weights\\Duration\\{dataset}.h5")
-    pkl.dump(scaler, open(f"Weights\\Duration\\{dataset}_scaler.pkl", 'wb'))
+    pkl.dump(scaler, open(f"Weights\\Duration\\{dataset}_time_scaler.pkl", 'wb'))
     pkl.dump(max_event_len, open(f"Weights\\Duration\\{dataset}_seq_len.pkl", 'wb'))
 
     # Test the model with the first event array; pad the arrays to match the max lengths and then trim after prediction
@@ -121,7 +120,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
     return model, scaler, max_event_len
 
 
-def train_tempo_model(epochs=100):
+def train_tempo_model(epochs=50):
     """Trains a D-Tree model to predict the tempo of a piece based on the events and event times."""
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'time', 'tempo']]
@@ -137,21 +136,19 @@ def train_tempo_model(epochs=100):
     df = df[df['tempo'].apply(len) > 0]
     df['time'] = df['time'].apply(lambda x: time_scaler.fit_transform(x.reshape(-1, 1)).flatten())
     df['tempo'] = df['tempo'].apply(lambda x: tempo_scaler.fit_transform(x.reshape(-1, 1)).flatten())
-
     inputs = np.array(df[['event', 'time']])
     outputs = np.array(df['tempo'])
 
-    # Find the longest event array (index 0) and longest time array (index 1)
-    # Pad all other arrays to this length using -1 (rest) for event and 0.0 for time
+    # Pad the inputs and outputs to the max length
     max_event_len = max([len(x[0]) for x in inputs])
     max_time_len = max([len(x[1]) for x in inputs])
     max_output_len = max([len(x) for x in outputs])
-    inputs_e = np.array([np.concatenate([x, np.full(max_event_len - len(x), -1)]).astype(int)
+    inputs_e = np.array([np.concatenate([x, np.full(max_event_len-len(x), -1)]).astype(int)
                          for x in np.array(df['event'])])
-    inputs_t = np.array([np.concatenate([x, np.full(max_time_len - len(x), 0.)]).astype(float)
+    inputs_t = np.array([np.concatenate([x, np.full(max_time_len-len(x), 0.)]).astype(float)
                          for x in np.array(df['time'])])
     inputs = np.stack((inputs_e, inputs_t), axis=-1)
-    outputs = np.array([np.concatenate([x, np.full(max_output_len - len(x), 0)]).astype(float) for x in outputs])
+    outputs = np.array([np.concatenate([x, np.full(max_output_len-len(x), 0)]).astype(float) for x in outputs])
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
@@ -160,7 +157,7 @@ def train_tempo_model(epochs=100):
     model.add(layers.LSTM(64, activation='tanh', input_shape=(max_event_len, 2), return_sequences=True))
     model.add(layers.TimeDistributed(layers.Dense(64, activation='tanh')))
     model.add(layers.TimeDistributed(layers.Dense(1, activation='linear')))
-    model.compile(optimizer='adam', loss='mse', metrics=['mse', 'mae'])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     model.summary()
     plot_model(model, to_file=f'Images\\tempo_model.png', show_shapes=True, show_layer_names=True)
 
@@ -195,21 +192,97 @@ def train_tempo_model(epochs=100):
     return model, time_scaler, tempo_scaler, max_event_len
 
 
-def train_time_signature_model():
+def train_time_signature_model(epochs=50):
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'time', 'time_signature_count', 'time_signature_beat']]
-    pass
+
+    # Normalize the data
+    scaler = StandardScaler()
+    df['event'] = df['event'].apply(ast.literal_eval).apply(np.array)
+    df['time'] = df['time'].apply(ast.literal_eval).apply(np.array)
+    df['time_signature_count'] = df['time_signature_beat'].apply(ast.literal_eval).apply(np.array)
+    df['time_signature_beat'] = df['time_signature_beat'].apply(ast.literal_eval).apply(np.array)
+    df['time_signature_count'] = df['time_signature_count'].apply(lambda x: np.array([int(y) for y in x]))
+    df['time_signature_beat'] = df['time_signature_beat'].apply(lambda x: np.array([int(y) for y in x]))
+    df = df[df['time'].apply(len) > 0]
+    df = df[df['event'].apply(len) > 0]
+    df = df[df['time_signature_count'].apply(len) > 0]
+    df = df[df['time_signature_beat'].apply(len) > 0]
+    df['time'] = df['time'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    inputs = np.array(df[['event', 'time']])
+    outputs = np.array(df[['time_signature_count', 'time_signature_beat']])
+
+    # Pad the inputs and outputs to the max length
+    max_event_len = max([len(x) for x in inputs[:, 0]])
+    max_time_len = max([len(x) for x in inputs[:, 1]])
+    max_output_n_len = max([len(x) for x in outputs[:, 0]])
+    max_output_d_len = max([len(x) for x in outputs[:, 1]])
+    inputs_e = np.array([np.concatenate([x, np.full(max_event_len-len(x), -1)]).astype(int) for x in inputs[:, 0]])
+    inputs_t = np.array([np.concatenate([x, np.full(max_time_len-len(x), 0.)]).astype(float) for x in inputs[:, 1]])
+    outputs_n = np.array([np.concatenate([x, np.full(max_output_n_len-len(x), 0)]).astype(int) for x in outputs[:, 0]])
+    outputs_d = np.array([np.concatenate([x, np.full(max_output_d_len-len(x), 0)]).astype(int) for x in outputs[:, 1]])
+    inputs = np.stack((inputs_e, inputs_t), axis=-1)
+    outputs = np.stack((outputs_n, outputs_d), axis=-1)
+
+    # Reshape input and output to time signature per GROUP_SIZE notes; must be a factor of max_event_len (25 works well)
+    group_size = 25
+    inputs = inputs.reshape(-1, group_size, inputs.shape[-1])
+    outputs = outputs.reshape(-1, group_size, outputs.shape[-1])
+
+    X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
+
+    # LSTM
+    model = Sequential()
+    model.add(layers.LSTM(50, return_sequences=True, input_shape=[None, 2]))
+    model.add(layers.LSTM(50, return_sequences=True))
+    model.add(layers.TimeDistributed(layers.Dense(2)))
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    model.summary()
+    plot_model(model, to_file=f'Images\\time_sig_model.png', show_shapes=True, show_layer_names=True)
+
+    model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test))
+    plot_histories(model, 'loss', 'val_loss', "Time Signature Model Loss (MSE)", 'Loss')
+    plot_histories(model, 'mae', 'val_mae', "Time Signature Model MAE", 'MAE')
+
+    # Save the model
+    model.save(f"Weights\\TimeSignature\\model.h5")
+    pkl.dump(scaler, open(f"Weights\\TimeSignature\\time_scaler.pkl", 'wb'))
+    pkl.dump(max_event_len, open(f"Weights\\TimeSignature\\seq_len.pkl", 'wb'))
+
+    # Test the model
+    event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)
+    time = np.concatenate([df['time'][0], np.full(max_time_len - len(df['time'][0]), 0.)]).astype(float)
+    time_sig_counts = df['time_signature_count'][0]
+    time_sig_beats = df['time_signature_beat'][0]
+    input_data = np.array([event, time]).reshape(1, max_event_len, 2)
+    output_data = model.predict(input_data)
+    output_data = output_data.squeeze()
+    predicted_counts = output_data[:len(time_sig_counts), 0]
+    predicted_beats = output_data[:len(time_sig_counts), 1]
+    predicted_counts = np.array([round(x) for x in predicted_counts])
+    predicted_beats = np.array([round(x) for x in predicted_beats])
+    print("Actual counts:", time_sig_counts)
+    print("Predicted counts:", predicted_counts)
+    print("Difference:", time_sig_counts - predicted_counts)
+    print("\nActual beats:", time_sig_beats)
+    print("Predicted beats:", predicted_beats)
+    print("Difference:", time_sig_beats - predicted_beats)
+
+    return model, max_event_len
 
 
 def train_key_model():
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'key_signature']]
+
+    # Bi-LSTM
     pass
 
 
 if __name__ == '__main__':
     print("Hello world!")
     # train_tempo_model(epochs=10)
+    train_time_signature_model(epochs=10)
     voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
