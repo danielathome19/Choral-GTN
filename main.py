@@ -272,17 +272,19 @@ def train_time_signature_model(epochs=50):
     return model, scaler, max_event_len
 
 
-def train_key_model(epochs=50):
+def train_key_model(epochs=10):
     """Trains a Bidirectional LSTM model to predict the key signature(s) of a piece based on the events."""
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'key_signature']]
 
     # Normalize the data
+    scaler = StandardScaler()
     df['event'] = df['event'].apply(ast.literal_eval).apply(np.array)
     df['key_signature'] = df['key_signature'].apply(ast.literal_eval).apply(np.array)
     df['key_signature'] = df['key_signature'].apply(lambda x: np.array([int(y) for y in x]))
     df = df[df['event'].apply(len) > 0]
     df = df[df['key_signature'].apply(len) > 0]
+    df['key_signature'] = df['key_signature'].apply(lambda x: scaler.fit_transform(x.reshape(-1, 1)).flatten())
     inputs = np.array(df['event'])
     outputs = np.array(df['key_signature'])
 
@@ -303,7 +305,7 @@ def train_key_model(epochs=50):
     model = Sequential()
     model.add(layers.Bidirectional(layers.LSTM(50, return_sequences=True), input_shape=[None, 1]))
     model.add(layers.Bidirectional(layers.LSTM(50, return_sequences=True)))
-    model.add(layers.TimeDistributed(layers.Dense(1)))
+    model.add(layers.TimeDistributed(layers.Dense(1, activation='tanh')))
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     model.summary()
     plot_model(model, to_file=f'Images\\key_sig_model.png', show_shapes=True, show_layer_names=True)
@@ -314,6 +316,7 @@ def train_key_model(epochs=50):
 
     # Save the model
     model.save(f"Weights\\KeySignature\\model.h5")
+    pkl.dump(scaler, open(f"Weights\\KeySignature\\key_scaler.pkl", 'wb'))
     pkl.dump(max_event_len, open(f"Weights\\KeySignature\\seq_len.pkl", 'wb'))
 
     # Test the model
@@ -323,6 +326,9 @@ def train_key_model(epochs=50):
     output_data = model.predict(input_data)
     output_data = output_data.squeeze()
     predicted_key_sigs = output_data[:len(key_sigs)]
+    key_sigs = scaler.inverse_transform(key_sigs.reshape(-1, 1)).flatten()
+    key_sigs = np.array([int(x) for x in key_sigs])
+    predicted_key_sigs = scaler.inverse_transform(predicted_key_sigs.reshape(-1, 1)).flatten()
     predicted_key_sigs = np.array([round(x) for x in predicted_key_sigs])
     print("Actual key sigs:", key_sigs)
     print("Predicted key sigs:", predicted_key_sigs)
@@ -330,14 +336,14 @@ def train_key_model(epochs=50):
     print("\nActual keys:", np.array([key_signature_to_number(x) for x in key_sigs]))
     print("Predicted keys:", np.array([key_signature_to_number(x) for x in predicted_key_sigs]))
 
-    return model, max_event_len
+    return model, scaler, max_event_len
 
 
 if __name__ == '__main__':
     print("Hello world!")
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
-    train_key_model(epochs=10)  # TODO: fix model overfitting?
+    train_key_model(epochs=10)
     voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
