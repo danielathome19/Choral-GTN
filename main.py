@@ -106,7 +106,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
     time_prev = np.concatenate([df['time_prev'][0], np.full(max_time_len - len(df['time_prev'][0]), 0.)]).astype(float)
     time_next = df['time_next'][0]
     # Reshape the input to match the model input layer
-    input_data = np.array([event, time_prev]).reshape(1, max_event_len, 2)
+    input_data = np.array([event, time_prev]).reshape((1, max_event_len, 2))
     time_pred = model.predict(input_data)
     # Rescale the time to match the original data
     time_next = scaler.inverse_transform(time_next.reshape(-1, 1)).flatten()
@@ -121,7 +121,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
 
 
 def train_tempo_model(epochs=50):
-    """Trains a D-Tree model to predict the tempo of a piece based on the events and event times."""
+    """Trains an LSTM model to predict the tempo of a piece based on the events and event times."""
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'time', 'tempo']]
 
@@ -176,7 +176,7 @@ def train_tempo_model(epochs=50):
     time = np.concatenate([df['time'][0], np.full(max_time_len - len(df['time'][0]), 0.)]).astype(float)
     tempo = df['tempo'][0]
     # Reshape the input to match the model input layer
-    input_data = np.array([event, time]).reshape(1, max_event_len, 2)
+    input_data = np.array([event, time]).reshape((1, max_event_len, 2))
     tempo_pred = model.predict(input_data)
     tempo = tempo_scaler.inverse_transform(tempo.reshape(-1, 1)).flatten()
     tempo_pred = tempo_pred.squeeze()
@@ -193,6 +193,7 @@ def train_tempo_model(epochs=50):
 
 
 def train_time_signature_model(epochs=50):
+    """Trains an LSTM model to predict the time signature(s) of a piece based on the events and event times."""
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'time', 'time_signature_count', 'time_signature_beat']]
 
@@ -226,8 +227,8 @@ def train_time_signature_model(epochs=50):
 
     # Reshape input and output to time signature per GROUP_SIZE notes; must be a factor of max_event_len (25 works well)
     group_size = 25
-    inputs = inputs.reshape(-1, group_size, inputs.shape[-1])
-    outputs = outputs.reshape(-1, group_size, outputs.shape[-1])
+    inputs = inputs.reshape((-1, group_size, inputs.shape[-1]))
+    outputs = outputs.reshape((-1, group_size, outputs.shape[-1]))
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
@@ -254,11 +255,11 @@ def train_time_signature_model(epochs=50):
     time = np.concatenate([df['time'][0], np.full(max_time_len - len(df['time'][0]), 0.)]).astype(float)
     time_sig_counts = df['time_signature_count'][0]
     time_sig_beats = df['time_signature_beat'][0]
-    input_data = np.array([event, time]).reshape(1, max_event_len, 2)
+    input_data = np.array([event, time]).reshape((1, max_event_len, 2))
     output_data = model.predict(input_data)
     output_data = output_data.squeeze()
     predicted_counts = output_data[:len(time_sig_counts), 0]
-    predicted_beats = output_data[:len(time_sig_counts), 1]
+    predicted_beats = output_data[:len(time_sig_beats), 1]
     predicted_counts = np.array([round(x) for x in predicted_counts])
     predicted_beats = np.array([round(x) for x in predicted_beats])
     print("Actual counts:", time_sig_counts)
@@ -268,21 +269,75 @@ def train_time_signature_model(epochs=50):
     print("Predicted beats:", predicted_beats)
     print("Difference:", time_sig_beats - predicted_beats)
 
-    return model, max_event_len
+    return model, scaler, max_event_len
 
 
-def train_key_model():
+def train_key_model(epochs=50):
+    """Trains a Bidirectional LSTM model to predict the key signature(s) of a piece based on the events."""
     df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
     df = df[['event', 'key_signature']]
 
+    # Normalize the data
+    df['event'] = df['event'].apply(ast.literal_eval).apply(np.array)
+    df['key_signature'] = df['key_signature'].apply(ast.literal_eval).apply(np.array)
+    df['key_signature'] = df['key_signature'].apply(lambda x: np.array([int(y) for y in x]))
+    df = df[df['event'].apply(len) > 0]
+    df = df[df['key_signature'].apply(len) > 0]
+    inputs = np.array(df['event'])
+    outputs = np.array(df['key_signature'])
+
+    # Pad the inputs and outputs to the max length
+    max_event_len = max([len(x) for x in inputs])
+    max_output_len = max([len(x) for x in outputs])
+    inputs = np.array([np.concatenate([x, np.full(max_event_len-len(x), -1)]).astype(int) for x in inputs])
+    outputs = np.array([np.concatenate([x, np.full(max_output_len-len(x), 0)]).astype(int) for x in outputs])
+
+    # Reshape input and output to key signature per GROUP_SIZE notes; must be a factor of max_event_len (25 works well)
+    group_size = 25
+    inputs = inputs.reshape((-1, group_size, 1))
+    outputs = outputs.reshape((-1, group_size, 1))
+
+    X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
+
     # Bi-LSTM
-    pass
+    model = Sequential()
+    model.add(layers.Bidirectional(layers.LSTM(50, return_sequences=True), input_shape=[None, 1]))
+    model.add(layers.Bidirectional(layers.LSTM(50, return_sequences=True)))
+    model.add(layers.TimeDistributed(layers.Dense(1)))
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    model.summary()
+    plot_model(model, to_file=f'Images\\key_sig_model.png', show_shapes=True, show_layer_names=True)
+
+    model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test))
+    plot_histories(model, 'loss', 'val_loss', "Key Signature Model Loss (MSE)", 'Loss')
+    plot_histories(model, 'mae', 'val_mae', "Key Signature Model MAE", 'MAE')
+
+    # Save the model
+    model.save(f"Weights\\KeySignature\\model.h5")
+    pkl.dump(max_event_len, open(f"Weights\\KeySignature\\seq_len.pkl", 'wb'))
+
+    # Test the model
+    event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)
+    key_sigs = df['key_signature'][0]
+    input_data = np.array([event]).reshape((1, max_event_len, 1))
+    output_data = model.predict(input_data)
+    output_data = output_data.squeeze()
+    predicted_key_sigs = output_data[:len(key_sigs)]
+    predicted_key_sigs = np.array([round(x) for x in predicted_key_sigs])
+    print("Actual key sigs:", key_sigs)
+    print("Predicted key sigs:", predicted_key_sigs)
+    print("Difference:", key_sigs - predicted_key_sigs)
+    print("\nActual keys:", np.array([key_signature_to_number(x) for x in key_sigs]))
+    print("Predicted keys:", np.array([key_signature_to_number(x) for x in predicted_key_sigs]))
+
+    return model, max_event_len
 
 
 if __name__ == '__main__':
     print("Hello world!")
     # train_tempo_model(epochs=10)
-    train_time_signature_model(epochs=10)
+    # train_time_signature_model(epochs=10)
+    train_key_model(epochs=10)  # TODO: fix model overfitting?
     voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
