@@ -19,6 +19,8 @@ def key_signature_to_number(key_signature):
                'Am', 'Bm', 'Cm', 'Dm', 'Em', 'Fm', 'Gm',
                'A#m', 'B#m', 'C#m', 'D#m', 'E#m', 'F#m', 'G#m',
                'Abm', 'Bbm', 'Cbm', 'Dbm', 'Ebm', 'Fbm', 'Gbm']
+    if isinstance(key_signature, int):
+        return mapping[key_signature]
     return mapping.index(key_signature)
 
 
