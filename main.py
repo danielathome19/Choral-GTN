@@ -55,6 +55,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     df = df[['event', 'time', 'tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
     # event;velocity;time;tempo;time_signature_count;time_signature_beat;key_signature
 
+    # region Preprocessing
     if dataset in ["Alto", "Tenor"]:
         df_S = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
         df_B = pd.read_csv(f"Data\\Tabular\\Bass.csv", sep=';')
@@ -87,16 +88,16 @@ def train_composition_model(dataset="Soprano", epochs=100):
         with open("Weights\\Duration\\Bass_time_scaler.pkl", "rb") as f:
             bass_scaler = pkl.load(f)
     # Apply scalers
-    df['time'] = df['time'].apply(lambda x: time_scaler.fit_transform(x.reshape(-1, 1)).flatten())
-    df['tempo'] = df['tempo'].apply(lambda x: tempo_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    df['time'] = df['time'].apply(lambda x: time_scaler.transform(x.reshape(-1, 1)).flatten())
+    df['tempo'] = df['tempo'].apply(lambda x: tempo_scaler.transform(x.reshape(-1, 1)).flatten())
     df['time_signature_count'] = \
-        df['time_signature_count'].apply(lambda x: time_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+        df['time_signature_count'].apply(lambda x: time_sig_scaler.transform(x.reshape(-1, 1)).flatten())
     df['time_signature_beat'] = \
-        df['time_signature_beat'].apply(lambda x: time_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
-    df['key_signature'] = df['key_signature'].apply(lambda x: key_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+        df['time_signature_beat'].apply(lambda x: time_sig_scaler.transform(x.reshape(-1, 1)).flatten())
+    df['key_signature'] = df['key_signature'].apply(lambda x: key_sig_scaler.transform(x.reshape(-1, 1)).flatten())
     if dataset in ["Alto", "Tenor"] and (sop_scaler is not None and bass_scaler is not None):
-        df['time_S'] = df['time_S'].apply(lambda x: sop_scaler.fit_transform(x.reshape(-1, 1)).flatten())
-        df['time_B'] = df['time_B'].apply(lambda x: bass_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+        df['time_S'] = df['time_S'].apply(lambda x: sop_scaler.transform(x.reshape(-1, 1)).flatten())
+        df['time_B'] = df['time_B'].apply(lambda x: bass_scaler.transform(x.reshape(-1, 1)).flatten())
 
     # Redundant for this function -- just for reference
     # inputs = df[['tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
@@ -134,6 +135,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     outputs_t = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
                           for x in np.array(df['time'])])
     outputs = np.stack((outputs_e, outputs_t), axis=-1)
+    # endregion Preprocessing
 
     group_size = 25
     inputs = inputs.reshape((-1, group_size, inputs.shape[-1]))
@@ -141,41 +143,51 @@ def train_composition_model(dataset="Soprano", epochs=100):
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
-    # Split y_train and y_test into y_train_e, y_train_t, y_test_e, y_test_t so the model outputs both features
+    # Build an array of each feature from X and y to use as input for the model
     y_train_e = y_train[:, :, 0]
     y_train_t = y_train[:, :, 1]
     y_test_e = y_test[:, :, 0]
     y_test_t = y_test[:, :, 1]
+    # X_train_split = [X_train[:, :, i] for i in range(X_train.shape[-1])]
+    # X_test_split = [X_test[:, :, i] for i in range(X_test.shape[-1])]
 
-    # Performer/Transformer model
+    # y_train_e = y_train[:, :, 0, np.newaxis]
+    # y_train_t = y_train[:, :, 1, np.newaxis]
+    # y_test_e = y_test[:, :, 0, np.newaxis]
+    # y_test_t = y_test[:, :, 1, np.newaxis]
+    X_train_split = [X_train[:, :, i, np.newaxis] for i in range(X_train.shape[-1])]
+    X_test_split = [X_test[:, :, i, np.newaxis] for i in range(X_test.shape[-1])]
+
+    # Print the shapes of all datasets
+    # print(f"y_train_e shape: {y_train_e.shape}")
+    # print(f"y_test_e shape: {y_test_e.shape}")
+    # print(f"y_train_t shape: {y_train_t.shape}")
+    # print(f"y_test_t shape: {y_test_t.shape}")
+    # print(f"X_train_split shape: {[x.shape for x in X_train_split]}")
+    # print(f"X_test_split shape: {[x.shape for x in X_test_split]}")
+
+    # Transformer model with two output layers (one for event, one for time)
     model = Performer(
         num_layers=2,
-        d_model=512,
+        d_model=group_size,  # 512
         num_heads=8,
         dff=2048,
-        # input_vocab_size=10000,
-        # target_vocab_size=10000,
+        features=len(X_train_split),
+        input_vocab_size=10000,
+        target_vocab_size=10000,
         rate=0.1
     )
     checkpoint_path = f"Weights\\Composition\\{dataset}_checkpoint.ckpt"
     callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
     early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
-    # model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-    model.compile(optimizer='adam',
-                  loss={'event_output': 'sparse_categorical_crossentropy', 'time_output': 'mse'},
-                  metrics={'event_output': 'accuracy', 'time_output': 'mse'})
-    # model.build(input_shape=(None, group_size, inputs.shape[-1]))
-    # model(X_train[0:1], training=True)
-    # model.summary()
-    # plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
-    #            show_shapes=True, show_layer_names=True, expand_nested=True)
+    model.compile(optimizer='adam', loss=['sparse_categorical_crossentropy', 'mse'], metrics=['accuracy', 'mse'])
+    model.build(input_shape=(None, group_size, len(X_train_split), 1))
+    model.summary()
+    plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
+               show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    # model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test), callbacks=[callback, early_stop])
-    # Build an array of each feature from X_train and X_test to use as input for the model
-    X_train_split = [X_train[:, :, i] for i in range(X_train.shape[-1])]
-    X_test_split = [X_test[:, :, i] for i in range(X_test.shape[-1])]
     model.fit(X_train_split, [y_train_e, y_train_t], callbacks=[callback, early_stop],
-              validation_data=(X_test_split, [y_test_e, y_test_t]), epochs=epochs)
+              validation_data=(X_test_split, [y_test_e, y_test_t]), epochs=epochs, batch_size=32)
     plot_histories(model, 'loss', 'val_loss', f"{dataset} Composition Model Loss (SCC)", 'Loss (SCC)')
     plot_histories(model, 'accuracy', 'val_accuracy', f"{dataset} Composition Model Accuracy", 'Accuracy')
 
