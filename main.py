@@ -9,6 +9,7 @@ import pickle as pkl
 import music21 as m21
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from Performer import *
 from keras import layers
 from keras import backend as k
 from keras.optimizers import Adam
@@ -16,7 +17,6 @@ from keras.src.utils import plot_model
 from keras.models import Model, Sequential
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeRegressor
-
 from data_utils import key_signature_to_number
 from sklearn.preprocessing import StandardScaler
 from keras.metrics import SparseCategoricalAccuracy
@@ -47,6 +47,141 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
     plt.show()
     if filename is not None:
         plt.savefig(filename)
+
+
+def train_composition_model(dataset="Soprano", epochs=100):
+    """Trains a Transformer model to generate notes and times for a given key, tempo, and time signature."""
+    df = pd.read_csv(f"Data\\Tabular\\{dataset}.csv", sep=';')
+    df = df[['event', 'time', 'tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
+    # event;velocity;time;tempo;time_signature_count;time_signature_beat;key_signature
+
+    if dataset in ["Alto", "Tenor"]:
+        df_S = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
+        df_B = pd.read_csv(f"Data\\Tabular\\Bass.csv", sep=';')
+        df_S = df_S[['event', 'time']]
+        df_B = df_B[['event', 'time']]
+        # Concatenate to main dataframe; rename columns to include voice part
+        df_S.columns = [f"{x}_S" for x in df_S.columns]
+        df_B.columns = [f"{x}_B" for x in df_B.columns]
+        df = pd.concat([df, df_S, df_B], axis=1)
+
+    # Normalize the data
+    for col in df.columns:
+        df[col] = df[col].apply(ast.literal_eval).apply(np.array)
+        df = df[df[col].apply(len) > 0]
+    for col in ['time_signature_count', 'time_signature_beat', 'key_signature']:
+        df[col] = df[col].apply(lambda x: np.array([int(y) for y in x]))
+    # Load scalers
+    with open("Weights\\Tempo\\tempo_scaler.pkl", "rb") as f:
+        tempo_scaler = pkl.load(f)
+    with open("Weights\\TimeSignature\\time_sig_scaler.pkl", "rb") as f:
+        time_sig_scaler = pkl.load(f)
+    with open("Weights\\KeySignature\\key_scaler.pkl", "rb") as f:
+        key_sig_scaler = pkl.load(f)
+    with open(f"Weights\\Duration\\{dataset}_time_scaler.pkl", "rb") as f:
+        time_scaler = pkl.load(f)
+    sop_scaler, bass_scaler = None, None
+    if dataset in ["Alto", "Tenor"]:
+        with open("Weights\\Duration\\Soprano_time_scaler.pkl", "rb") as f:
+            sop_scaler = pkl.load(f)
+        with open("Weights\\Duration\\Bass_time_scaler.pkl", "rb") as f:
+            bass_scaler = pkl.load(f)
+    # Apply scalers
+    df['time'] = df['time'].apply(lambda x: time_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    df['tempo'] = df['tempo'].apply(lambda x: tempo_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    df['time_signature_count'] = \
+        df['time_signature_count'].apply(lambda x: time_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    df['time_signature_beat'] = \
+        df['time_signature_beat'].apply(lambda x: time_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    df['key_signature'] = df['key_signature'].apply(lambda x: key_sig_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+    if dataset in ["Alto", "Tenor"] and (sop_scaler is not None and bass_scaler is not None):
+        df['time_S'] = df['time_S'].apply(lambda x: sop_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+        df['time_B'] = df['time_B'].apply(lambda x: bass_scaler.fit_transform(x.reshape(-1, 1)).flatten())
+
+    # Redundant for this function -- just for reference
+    # inputs = df[['tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
+    # outputs = np.array(df[['event', 'time']])
+    # if dataset in ["Alto", "Tenor"]:
+    #     inputs = pd.concat([inputs, df[['event_S', 'event_B', 'time_S', 'time_B']]], axis=1)
+    # inputs = np.array(inputs)
+
+    # Grab the maximum sequence length and pad the rest; they should all be the same length by now
+    with open(f"Weights\\Duration\\{dataset}_seq_len.pkl", "rb") as f:
+        max_seq_len = pkl.load(f)
+    inputs_tempo = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
+                             for x in np.array(df['tempo'])])
+    inputs_time_n = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
+                              for x in np.array(df['time_signature_count'])])
+    inputs_time_d = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
+                              for x in np.array(df['time_signature_beat'])])
+    inputs_key = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
+                           for x in np.array(df['key_signature'])])
+    if dataset in ["Alto", "Tenor"]:
+        inputs_e_S = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
+                               for x in np.array(df['event_S'])])
+        inputs_t_S = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
+                               for x in np.array(df['time_S'])])
+        inputs_e_B = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
+                               for x in np.array(df['event_B'])])
+        inputs_t_B = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
+                               for x in np.array(df['time_B'])])
+        inputs = np.stack((inputs_tempo, inputs_time_n, inputs_time_d, inputs_key,
+                           inputs_e_S, inputs_t_S, inputs_e_B, inputs_t_B), axis=-1)
+    else:
+        inputs = np.stack((inputs_tempo, inputs_time_n, inputs_time_d, inputs_key), axis=-1)
+    outputs_e = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
+                          for x in np.array(df['event'])])
+    outputs_t = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
+                          for x in np.array(df['time'])])
+    outputs = np.stack((outputs_e, outputs_t), axis=-1)
+
+    group_size = 25
+    inputs = inputs.reshape((-1, group_size, inputs.shape[-1]))
+    outputs = outputs.reshape((-1, group_size, outputs.shape[-1]))
+
+    X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
+
+    # Split y_train and y_test into y_train_e, y_train_t, y_test_e, y_test_t so the model outputs both features
+    y_train_e = y_train[:, :, 0]
+    y_train_t = y_train[:, :, 1]
+    y_test_e = y_test[:, :, 0]
+    y_test_t = y_test[:, :, 1]
+
+    # Performer/Transformer model
+    model = Performer(
+        num_layers=2,
+        d_model=512,
+        num_heads=8,
+        dff=2048,
+        # input_vocab_size=10000,
+        # target_vocab_size=10000,
+        rate=0.1
+    )
+    checkpoint_path = f"Weights\\Composition\\{dataset}_checkpoint.ckpt"
+    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
+    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
+    # model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='adam',
+                  loss={'event_output': 'sparse_categorical_crossentropy', 'time_output': 'mse'},
+                  metrics={'event_output': 'accuracy', 'time_output': 'mse'})
+    # model.build(input_shape=(None, group_size, inputs.shape[-1]))
+    # model(X_train[0:1], training=True)
+    # model.summary()
+    # plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
+    #            show_shapes=True, show_layer_names=True, expand_nested=True)
+
+    # model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test), callbacks=[callback, early_stop])
+    # Build an array of each feature from X_train and X_test to use as input for the model
+    X_train_split = [X_train[:, :, i] for i in range(X_train.shape[-1])]
+    X_test_split = [X_test[:, :, i] for i in range(X_test.shape[-1])]
+    model.fit(X_train_split, [y_train_e, y_train_t], callbacks=[callback, early_stop],
+              validation_data=(X_test_split, [y_test_e, y_test_t]), epochs=epochs)
+    plot_histories(model, 'loss', 'val_loss', f"{dataset} Composition Model Loss (SCC)", 'Loss (SCC)')
+    plot_histories(model, 'accuracy', 'val_accuracy', f"{dataset} Composition Model Accuracy", 'Accuracy')
+
+    model.save_weights(f"Weights\\Composition\\{dataset}_model.png.h5")
+
+    pass
 
 
 def train_duration_model(dataset="Soprano", epochs=100):
@@ -97,7 +232,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
     plot_histories(model, 'mae', 'val_mae', f"{dataset} Duration Model MAE", 'MAE')
 
     # Save the model, scaler, and max length (all 3 max lengths should be the same)
-    model.save(f"Weights\\Duration\\{dataset}.h5")
+    model.save(f"Weights\\Duration\\{dataset}_model.h5")
     pkl.dump(scaler, open(f"Weights\\Duration\\{dataset}_time_scaler.pkl", 'wb'))
     pkl.dump(max_event_len, open(f"Weights\\Duration\\{dataset}_seq_len.pkl", 'wb'))
 
@@ -148,7 +283,7 @@ def train_tempo_model(epochs=50):
     inputs_t = np.array([np.concatenate([x, np.full(max_time_len-len(x), 0.)]).astype(float)
                          for x in np.array(df['time'])])
     inputs = np.stack((inputs_e, inputs_t), axis=-1)
-    outputs = np.array([np.concatenate([x, np.full(max_output_len-len(x), 0)]).astype(float) for x in outputs])
+    outputs = np.array([np.concatenate([x, np.full(max_output_len-len(x), 0.)]).astype(float) for x in outputs])
 
     X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
 
@@ -247,7 +382,7 @@ def train_time_signature_model(epochs=50):
 
     # Save the model
     model.save(f"Weights\\TimeSignature\\model.h5")
-    pkl.dump(scaler, open(f"Weights\\TimeSignature\\time_scaler.pkl", 'wb'))
+    pkl.dump(scaler, open(f"Weights\\TimeSignature\\time_sig_scaler.pkl", 'wb'))
     pkl.dump(max_event_len, open(f"Weights\\TimeSignature\\seq_len.pkl", 'wb'))
 
     # Test the model
@@ -343,9 +478,12 @@ if __name__ == '__main__':
     print("Hello world!")
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
-    train_key_model(epochs=10)
+    # train_key_model(epochs=10)
+    train_composition_model("Soprano", epochs=10)
     voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
         pass
-    # train()
+    for voice_dataset in voices_datasets:
+        # train_composition_model(voice_dataset, epochs=100)
+        pass
