@@ -1,27 +1,19 @@
-import os
 import ast
 import sys
+import glob
+import time
 import logging
 import warnings
-import numpy as np
-import pandas as pd
-import pickle as pkl
-import music21 as m21
-import tensorflow as tf
 import matplotlib.pyplot as plt
-from Performer import *
+from Transformer import *
 from keras import layers
+from keras import losses
 from keras import backend as k
-from keras.optimizers import Adam
 from keras.src.utils import plot_model
-from keras.models import Model, Sequential
-from sklearn.preprocessing import LabelEncoder
-from sklearn.tree import DecisionTreeRegressor
+from keras.models import Sequential
 from data_utils import key_signature_to_number
 from sklearn.preprocessing import StandardScaler
-from keras.metrics import SparseCategoricalAccuracy
 from sklearn.model_selection import train_test_split
-from keras.losses import SparseCategoricalCrossentropy
 
 
 tf.get_logger().setLevel(logging.ERROR)
@@ -50,148 +42,181 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 
 def train_composition_model(dataset="Soprano", epochs=100):
-    """Trains a Transformer model to generate notes and times for a given key, tempo, and time signature."""
-    df = pd.read_csv(f"Data\\Tabular\\{dataset}.csv", sep=';')
-    df = df[['event', 'time', 'tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
-    # event;velocity;time;tempo;time_signature_count;time_signature_beat;key_signature
+    """Trains a Transformer model to generate notes and times."""
+    PARSE_MIDI_FILES = not os.path.exists(f"Data\\Glob\\{dataset}_notes.pkl")
+    PARSED_DATA_PATH = f"Data\\Glob\\{dataset}_"
+    DATASET_REPETITIONS = 1
+    SEQ_LEN = 50
+    EMBEDDING_DIM = 256
+    KEY_DIM = 256
+    N_HEADS = 5
+    DROPOUT_RATE = 0.3
+    FEED_FORWARD_DIM = 256
+    LOAD_MODEL = False
+    BATCH_SIZE = 256
+    GENERATE_LEN = 50
 
-    # region Preprocessing
-    if dataset in ["Alto", "Tenor"]:
-        df_S = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
-        df_B = pd.read_csv(f"Data\\Tabular\\Bass.csv", sep=';')
-        df_S = df_S[['event', 'time']]
-        df_B = df_B[['event', 'time']]
-        # Concatenate to main dataframe; rename columns to include voice part
-        df_S.columns = [f"{x}_S" for x in df_S.columns]
-        df_B.columns = [f"{x}_B" for x in df_B.columns]
-        df = pd.concat([df, df_S, df_B], axis=1)
+    file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\Isolated\\*.mid")
+    parser = music21.converter
 
-    # Normalize the data
-    for col in df.columns:
-        df[col] = df[col].apply(ast.literal_eval).apply(np.array)
-        df = df[df[col].apply(len) > 0]
-    for col in ['time_signature_count', 'time_signature_beat', 'key_signature']:
-        df[col] = df[col].apply(lambda x: np.array([int(y) for y in x]))
-    # Load scalers
-    with open("Weights\\Tempo\\tempo_scaler.pkl", "rb") as f:
-        tempo_scaler = pkl.load(f)
-    with open("Weights\\TimeSignature\\time_sig_scaler.pkl", "rb") as f:
-        time_sig_scaler = pkl.load(f)
-    with open("Weights\\KeySignature\\key_scaler.pkl", "rb") as f:
-        key_sig_scaler = pkl.load(f)
-    with open(f"Weights\\Duration\\{dataset}_time_scaler.pkl", "rb") as f:
-        time_scaler = pkl.load(f)
-    sop_scaler, bass_scaler = None, None
-    if dataset in ["Alto", "Tenor"]:
-        with open("Weights\\Duration\\Soprano_time_scaler.pkl", "rb") as f:
-            sop_scaler = pkl.load(f)
-        with open("Weights\\Duration\\Bass_time_scaler.pkl", "rb") as f:
-            bass_scaler = pkl.load(f)
-    # Apply scalers
-    df['time'] = df['time'].apply(lambda x: time_scaler.transform(x.reshape(-1, 1)).flatten())
-    df['tempo'] = df['tempo'].apply(lambda x: tempo_scaler.transform(x.reshape(-1, 1)).flatten())
-    df['time_signature_count'] = \
-        df['time_signature_count'].apply(lambda x: time_sig_scaler.transform(x.reshape(-1, 1)).flatten())
-    df['time_signature_beat'] = \
-        df['time_signature_beat'].apply(lambda x: time_sig_scaler.transform(x.reshape(-1, 1)).flatten())
-    df['key_signature'] = df['key_signature'].apply(lambda x: key_sig_scaler.transform(x.reshape(-1, 1)).flatten())
-    if dataset in ["Alto", "Tenor"] and (sop_scaler is not None and bass_scaler is not None):
-        df['time_S'] = df['time_S'].apply(lambda x: sop_scaler.transform(x.reshape(-1, 1)).flatten())
-        df['time_B'] = df['time_B'].apply(lambda x: bass_scaler.transform(x.reshape(-1, 1)).flatten())
-
-    # Redundant for this function -- just for reference
-    # inputs = df[['tempo', 'time_signature_count', 'time_signature_beat', 'key_signature']]
-    # outputs = np.array(df[['event', 'time']])
-    # if dataset in ["Alto", "Tenor"]:
-    #     inputs = pd.concat([inputs, df[['event_S', 'event_B', 'time_S', 'time_B']]], axis=1)
-    # inputs = np.array(inputs)
-
-    # Grab the maximum sequence length and pad the rest; they should all be the same length by now
-    with open(f"Weights\\Duration\\{dataset}_seq_len.pkl", "rb") as f:
-        max_seq_len = pkl.load(f)
-    inputs_tempo = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
-                             for x in np.array(df['tempo'])])
-    inputs_time_n = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
-                              for x in np.array(df['time_signature_count'])])
-    inputs_time_d = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
-                              for x in np.array(df['time_signature_beat'])])
-    inputs_key = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0)]).astype(int)
-                           for x in np.array(df['key_signature'])])
-    if dataset in ["Alto", "Tenor"]:
-        inputs_e_S = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
-                               for x in np.array(df['event_S'])])
-        inputs_t_S = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
-                               for x in np.array(df['time_S'])])
-        inputs_e_B = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
-                               for x in np.array(df['event_B'])])
-        inputs_t_B = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
-                               for x in np.array(df['time_B'])])
-        inputs = np.stack((inputs_tempo, inputs_time_n, inputs_time_d, inputs_key,
-                           inputs_e_S, inputs_t_S, inputs_e_B, inputs_t_B), axis=-1)
+    if PARSE_MIDI_FILES:
+        print(f"Parsing {len(file_list)} {dataset} midi files...")
+        notes, durations = parse_midi_files(file_list, parser, SEQ_LEN + 1, PARSED_DATA_PATH)
     else:
-        inputs = np.stack((inputs_tempo, inputs_time_n, inputs_time_d, inputs_key), axis=-1)
-    outputs_e = np.array([np.concatenate([x, np.full(max_seq_len-len(x), -1)]).astype(int)
-                          for x in np.array(df['event'])])
-    outputs_t = np.array([np.concatenate([x, np.full(max_seq_len-len(x), 0.)]).astype(float)
-                          for x in np.array(df['time'])])
-    outputs = np.stack((outputs_e, outputs_t), axis=-1)
-    # endregion Preprocessing
+        notes, durations = load_parsed_files(PARSED_DATA_PATH)
 
-    group_size = 25
-    inputs = inputs.reshape((-1, group_size, inputs.shape[-1]))
-    outputs = outputs.reshape((-1, group_size, outputs.shape[-1]))
+    example_notes = notes[658]
+    # example_durations = durations[658]
+    # print("\nNotes string\n", example_notes, "...")
+    # print("\nDuration string\n", example_durations, "...")
 
-    X_train, X_test, y_train, y_test = train_test_split(inputs, outputs, test_size=0.2, random_state=42)
+    def create_dataset(elements):
+        ds = (tf.data.Dataset.from_tensor_slices(elements).batch(BATCH_SIZE, drop_remainder=True).shuffle(1000))
+        vectorize_layer = layers.TextVectorization(standardize=None, output_mode="int")
+        vectorize_layer.adapt(ds)
+        vocab = vectorize_layer.get_vocabulary()
+        return ds, vectorize_layer, vocab
 
-    # Build an array of each feature from X and y to use as input for the model
-    y_train_e = y_train[:, :, 0]
-    y_train_t = y_train[:, :, 1]
-    y_test_e = y_test[:, :, 0]
-    y_test_t = y_test[:, :, 1]
-    # X_train_split = [X_train[:, :, i] for i in range(X_train.shape[-1])]
-    # X_test_split = [X_test[:, :, i] for i in range(X_test.shape[-1])]
+    notes_seq_ds, notes_vectorize_layer, notes_vocab = create_dataset(notes)
+    durations_seq_ds, durations_vectorize_layer, durations_vocab = create_dataset(durations)
+    seq_ds = tf.data.Dataset.zip((notes_seq_ds, durations_seq_ds))
 
-    # y_train_e = y_train[:, :, 0, np.newaxis]
-    # y_train_t = y_train[:, :, 1, np.newaxis]
-    # y_test_e = y_test[:, :, 0, np.newaxis]
-    # y_test_t = y_test[:, :, 1, np.newaxis]
-    X_train_split = [X_train[:, :, i, np.newaxis] for i in range(X_train.shape[-1])]
-    X_test_split = [X_test[:, :, i, np.newaxis] for i in range(X_test.shape[-1])]
+    # Display the same example notes and durations converted to ints
+    example_tokenised_notes = notes_vectorize_layer(example_notes)
+    # example_tokenised_durations = durations_vectorize_layer(example_durations)
+    # print("{:10} {:10}".format("note token", "duration token"))
+    # for i, (note_int, duration_int) in \
+    #         enumerate(zip(example_tokenised_notes.numpy()[:11], example_tokenised_durations.numpy()[:11],)):
+    #     print(f"{note_int:10}{duration_int:10}")
 
-    # Print the shapes of all datasets
-    # print(f"y_train_e shape: {y_train_e.shape}")
-    # print(f"y_test_e shape: {y_test_e.shape}")
-    # print(f"y_train_t shape: {y_train_t.shape}")
-    # print(f"y_test_t shape: {y_test_t.shape}")
-    # print(f"X_train_split shape: {[x.shape for x in X_train_split]}")
-    # print(f"X_test_split shape: {[x.shape for x in X_test_split]}")
+    notes_vocab_size = len(notes_vocab)
+    durations_vocab_size = len(durations_vocab)
 
-    # Transformer model with two output layers (one for event, one for time)
-    model = Performer(
-        num_layers=2,
-        d_model=group_size,  # 512
-        num_heads=8,
-        dff=2048,
-        features=len(X_train_split),
-        input_vocab_size=10000,
-        target_vocab_size=10000,
-        rate=0.1
-    )
-    checkpoint_path = f"Weights\\Composition\\{dataset}_checkpoint.ckpt"
-    callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
-    early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
-    model.compile(optimizer='adam', loss=['sparse_categorical_crossentropy', 'mse'], metrics=['accuracy', 'mse'])
-    model.build(input_shape=(None, group_size, len(X_train_split), 1))
+    # Display some token:note mappings
+    # print(f"\nNOTES_VOCAB: length = {len(notes_vocab)}")
+    # for i, note in enumerate(notes_vocab[:10]):
+    #     print(f"{i}: {note}")
+
+    # print(f"\nDURATIONS_VOCAB: length = {len(durations_vocab)}")
+    # Display some token:duration mappings
+    # for i, note in enumerate(durations_vocab[:10]):
+    #     print(f"{i}: {note}")
+
+    # Create the training set of sequences and the same sequences shifted by one note
+    def prepare_inputs(notes, durations):
+        notes = tf.expand_dims(notes, -1)
+        durations = tf.expand_dims(durations, -1)
+        tokenized_notes = notes_vectorize_layer(notes)
+        tokenized_durations = durations_vectorize_layer(durations)
+        x = (tokenized_notes[:, :-1], tokenized_durations[:, :-1])
+        y = (tokenized_notes[:, 1:], tokenized_durations[:, 1:])
+        return x, y
+
+    ds = seq_ds.map(prepare_inputs).repeat(DATASET_REPETITIONS)
+
+    # example_input_output = ds.take(1).get_single_element()
+    # print(example_input_output)
+
+    tpe = TokenAndPositionEmbedding(notes_vocab_size, 32)
+    token_embedding = tpe.token_emb(example_tokenised_notes)
+    position_embedding = tpe.pos_emb(token_embedding)
+    embedding = tpe(example_tokenised_notes)
+    plt.imshow(np.transpose(token_embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
+    plt.title("Token Embedding")
+    plt.xlabel("Token")
+    plt.ylabel("Embedding Dimension")
+    plt.show()
+    plt.imshow(np.transpose(position_embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
+    plt.title("Position Embedding")
+    plt.xlabel("Token")
+    plt.ylabel("Embedding Dimension")
+    plt.show()
+    plt.imshow(np.transpose(embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
+    plt.title("Token + Position Embedding")
+    plt.xlabel("Token")
+    plt.ylabel("Embedding Dimension")
+    plt.show()
+
+    note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
+    durations_inputs = layers.Input(shape=(None,), dtype=tf.int32)
+    note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, EMBEDDING_DIM // 2)(note_inputs)
+    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, EMBEDDING_DIM // 2)(durations_inputs)
+    embeddings = layers.Concatenate()([note_embeddings, duration_embeddings])
+    x, attention_scores = TransformerBlock(name="attention", embed_dim=EMBEDDING_DIM, ff_dim=FEED_FORWARD_DIM,
+                                           num_heads=N_HEADS, key_dim=KEY_DIM, dropout_rate=DROPOUT_RATE)(embeddings)
+    note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)  # Attention scores
+    duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
+    model = models.Model(inputs=[note_inputs, durations_inputs], outputs=[note_outputs, duration_outputs])
+    model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
     model.summary()
     plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    model.fit(X_train_split, [y_train_e, y_train_t], callbacks=[callback, early_stop],
-              validation_data=(X_test_split, [y_test_e, y_test_t]), epochs=epochs, batch_size=32)
-    plot_histories(model, 'loss', 'val_loss', f"{dataset} Composition Model Loss (SCC)", 'Loss (SCC)')
-    plot_histories(model, 'accuracy', 'val_accuracy', f"{dataset} Composition Model Accuracy", 'Accuracy')
+    if LOAD_MODEL:
+        model.load_weights(f"Weights\\Composition\\{dataset}\\checkpoint.ckpt")
+        # model.load_model(f"Weights\\Composition\\{dataset}", compile=True)
 
-    model.save_weights(f"Weights\\Composition\\{dataset}_model.png.h5")
+    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights\\Composition\\{dataset}\\checkpoint.ckpt",
+                                                    save_weights_only=True, save_freq="epoch", verbose=0)
+    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs\\{dataset}")
+
+    # Tokenize starting prompt
+    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
+    model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator])
+    model.save(f"Weights\\Composition\\{dataset}")
+
+    # Test the model
+    info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
+    midi_stream = info[-1]["midi"].chordify()
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    midi_stream.write("midi", fp=os.path.join(f"Data\\Generated\\{dataset}", "output-" + timestr + ".mid"))
+
+    max_pitch = 70
+    seq_len = len(info)
+    grid = np.zeros((max_pitch, seq_len), dtype=np.float32)
+
+    for j in range(seq_len):
+        for i, prob in enumerate(info[j]["note_probs"]):
+            try:
+                pitch = music21.note.Note(notes_vocab[i]).pitch.midi
+                grid[pitch, j] = prob
+            except:
+                pass
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_yticks([int(j) for j in range(35, 70)])
+    plt.imshow(grid[35:70, :], origin="lower", cmap="coolwarm", vmin=-0.5, vmax=0.5, extent=[0, seq_len, 35, 70])
+    plt.title("Note Probabilities")
+    plt.xlabel("Timestep")
+    plt.ylabel("Pitch")
+    plt.show()
+
+    plot_size = 20
+    att_matrix = np.zeros((plot_size, plot_size))
+    prediction_output = []
+    last_prompt = []
+
+    for j in range(plot_size):
+        atts = info[j]["atts"].max(axis=0)
+        att_matrix[: (j + 1), j] = atts
+        prediction_output.append(info[j]["chosen_note"][0])
+        last_prompt.append(info[j]["prompt"][0][-1])
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    im = ax.imshow(att_matrix, cmap="Greens", interpolation="nearest")
+    ax.set_xticks(np.arange(-0.5, plot_size, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, plot_size, 1), minor=True)
+    ax.grid(which="minor", color="black", linestyle="-", linewidth=1)
+    ax.set_xticks(np.arange(plot_size))
+    ax.set_yticks(np.arange(plot_size))
+    ax.set_xticklabels(prediction_output[:plot_size])
+    ax.set_yticklabels(last_prompt[:plot_size])
+    ax.xaxis.tick_top()
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="left", va="center", rotation_mode="anchor")
+    plt.title("Attention Matrix")
+    plt.xlabel("Predicted Output")
+    plt.ylabel("Last Prompt")
+    plt.show()
 
     pass
 
@@ -492,7 +517,7 @@ if __name__ == '__main__':
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
     train_composition_model("Soprano", epochs=10)
-    voices_datasets = ["Soprano", "Alto", "Tenor", "Bass"]
+    voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
         pass
