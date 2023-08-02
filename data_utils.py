@@ -4,6 +4,8 @@ import music21
 import numpy as np
 import pandas as pd
 import pickle as pkl
+import tensorflow as tf
+from keras import layers
 from fractions import Fraction
 
 
@@ -133,34 +135,26 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
         if verbose:
             print(i + 1, "Parsing %s" % file)
         score = parser.parse(file).chordify()
-
         notes.append("START")
         durations.append("0.0")
-
         for element in score.flat:
             note_name = None
             duration_name = None
-
             if isinstance(element, music21.key.Key):
                 note_name = str(element.tonic.name) + ":" + str(element.mode)
                 duration_name = "0.0"
-
             elif isinstance(element, music21.meter.TimeSignature):
                 note_name = str(element.ratioString) + "TS"
                 duration_name = "0.0"
-
             elif isinstance(element, music21.chord.Chord):
                 note_name = element.pitches[-1].nameWithOctave
                 duration_name = str(element.duration.quarterLength)
-
             elif isinstance(element, music21.note.Rest):
                 note_name = str(element.name)
                 duration_name = str(element.duration.quarterLength)
-
             elif isinstance(element, music21.note.Note):
                 note_name = str(element.nameWithOctave)
                 duration_name = str(element.duration.quarterLength)
-
             if note_name and duration_name:
                 notes.append(note_name)
                 durations.append(duration_name)
@@ -169,13 +163,11 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
 
     notes_list = []
     duration_list = []
-
     if verbose:
         print(f"Building sequences of length {seq_len}")
     for i in range(len(notes) - seq_len):
         notes_list.append(" ".join(notes[i: (i + seq_len)]))
         duration_list.append(" ".join(durations[i: (i + seq_len)]))
-
     if parsed_data_path:
         with open((parsed_data_path + "notes.pkl"), "wb") as f:
             pkl.dump(notes_list, f)
@@ -183,6 +175,14 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
             pkl.dump(duration_list, f)
 
     return notes_list, duration_list
+
+
+def create_transformer_dataset(elements, batch_size=256):
+    ds = (tf.data.Dataset.from_tensor_slices(elements).batch(batch_size, drop_remainder=True).shuffle(1000))
+    vectorize_layer = layers.TextVectorization(standardize=None, output_mode="int")
+    vectorize_layer.adapt(ds)
+    vocab = vectorize_layer.get_vocabulary()
+    return ds, vectorize_layer, vocab
 
 
 def load_parsed_files(parsed_data_path):
@@ -195,48 +195,62 @@ def load_parsed_files(parsed_data_path):
 
 def get_midi_note(sample_note, sample_duration):
     new_note = None
-
     if "TS" in sample_note:
         new_note = music21.meter.TimeSignature(sample_note.split("TS")[0])
-
     elif "major" in sample_note or "minor" in sample_note:
         tonic, mode = sample_note.split(":")
         new_note = music21.key.Key(tonic, mode)
-
     elif sample_note == "rest":
         new_note = music21.note.Rest()
-        new_note.duration = music21.duration.Duration(
-            float(Fraction(sample_duration))
-        )
+        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
         new_note.storedInstrument = music21.instrument.Violoncello()
-
     elif "." in sample_note:
         notes_in_chord = sample_note.split(".")
         chord_notes = []
         for current_note in notes_in_chord:
             n = music21.note.Note(current_note)
-            n.duration = music21.duration.Duration(
-                float(Fraction(sample_duration))
-            )
+            n.duration = music21.duration.Duration(float(Fraction(sample_duration)))
             n.storedInstrument = music21.instrument.Violoncello()
             chord_notes.append(n)
         new_note = music21.chord.Chord(chord_notes)
-
     elif sample_note == "rest":
         new_note = music21.note.Rest()
-        new_note.duration = music21.duration.Duration(
-            float(Fraction(sample_duration))
-        )
+        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
         new_note.storedInstrument = music21.instrument.Violoncello()
-
     elif sample_note != "START":
         new_note = music21.note.Note(sample_note)
-        new_note.duration = music21.duration.Duration(
-            float(Fraction(sample_duration))
-        )
+        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
         new_note.storedInstrument = music21.instrument.Violoncello()
-
     return new_note
+
+
+def compile_midi_from_voices():
+    soprano_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Soprano\Isolated")
+    alto_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Alto\Isolated")
+    tenor_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Tenor\Isolated")
+    bass_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Bass\Isolated")
+    soprano_files = sorted([f for f in os.listdir(soprano_path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+    alto_files = sorted([f for f in os.listdir(alto_path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+    tenor_files = sorted([f for f in os.listdir(tenor_path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+    bass_files = sorted([f for f in os.listdir(bass_path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+    for soprano_file, alto_file, tenor_file, bass_file in zip(soprano_files, alto_files, tenor_files, bass_files):
+        new_midi = mido.MidiFile()
+        soprano_midi = mido.MidiFile(os.path.join(soprano_path, soprano_file))
+        new_midi.tracks.append(soprano_midi.tracks[0])
+        new_midi.ticks_per_beat = soprano_midi.ticks_per_beat
+        for voice_path, voice_file in zip([soprano_path, alto_path, tenor_path, bass_path],
+                                          [soprano_file, alto_file, tenor_file, bass_file]):
+            voice_midi = mido.MidiFile(os.path.join(voice_path, voice_file))
+            for i, track in enumerate(voice_midi.tracks):
+                if i != 0:
+                    new_midi.tracks.append(track)
+                elif i == 0 and voice_file != soprano_file:
+                    for msg in track:
+                        new_midi.tracks[0].append(msg)
+        filename = soprano_file.split(".")[0] + "_all.mid"
+        new_midi.save(os.path.join(os.getcwd(), "Data\\MIDI\\VoiceParts\\Combined", filename))
+        print("Saved file: " + filename)
+    pass
 
 
 if __name__ == "__main__":
@@ -246,7 +260,8 @@ if __name__ == "__main__":
     # pd.set_option('display.max_columns', None)
     # print(df_mid)
     # print(transpose_df_to_row(df_mid))
-    # quit()
+    compile_midi_from_voices()
+    quit()
 
     SOPRANO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Soprano\Isolated")
     ALTO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Alto\Isolated")

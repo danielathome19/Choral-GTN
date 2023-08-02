@@ -56,7 +56,10 @@ def train_composition_model(dataset="Soprano", epochs=100):
     BATCH_SIZE = 256
     GENERATE_LEN = 50
 
-    file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\Isolated\\*.mid")
+    if dataset != "Combined":
+        file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\Isolated\\*.mid")
+    else:
+        file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\*.mid")
     parser = music21.converter
 
     if PARSE_MIDI_FILES:
@@ -70,15 +73,8 @@ def train_composition_model(dataset="Soprano", epochs=100):
     # print("\nNotes string\n", example_notes, "...")
     # print("\nDuration string\n", example_durations, "...")
 
-    def create_dataset(elements):
-        ds = (tf.data.Dataset.from_tensor_slices(elements).batch(BATCH_SIZE, drop_remainder=True).shuffle(1000))
-        vectorize_layer = layers.TextVectorization(standardize=None, output_mode="int")
-        vectorize_layer.adapt(ds)
-        vocab = vectorize_layer.get_vocabulary()
-        return ds, vectorize_layer, vocab
-
-    notes_seq_ds, notes_vectorize_layer, notes_vocab = create_dataset(notes)
-    durations_seq_ds, durations_vectorize_layer, durations_vocab = create_dataset(durations)
+    notes_seq_ds, notes_vectorize_layer, notes_vocab = create_transformer_dataset(notes, BATCH_SIZE)
+    durations_seq_ds, durations_vectorize_layer, durations_vocab = create_transformer_dataset(durations, BATCH_SIZE)
     seq_ds = tf.data.Dataset.zip((notes_seq_ds, durations_seq_ds))
 
     # Display the same example notes and durations converted to ints
@@ -138,15 +134,15 @@ def train_composition_model(dataset="Soprano", epochs=100):
     plt.show()
 
     note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    durations_inputs = layers.Input(shape=(None,), dtype=tf.int32)
+    duration_inputs = layers.Input(shape=(None,), dtype=tf.int32)
     note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, EMBEDDING_DIM // 2)(note_inputs)
-    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, EMBEDDING_DIM // 2)(durations_inputs)
+    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, EMBEDDING_DIM // 2)(duration_inputs)
     embeddings = layers.Concatenate()([note_embeddings, duration_embeddings])
     x, attention_scores = TransformerBlock(name="attention", embed_dim=EMBEDDING_DIM, ff_dim=FEED_FORWARD_DIM,
                                            num_heads=N_HEADS, key_dim=KEY_DIM, dropout_rate=DROPOUT_RATE)(embeddings)
     note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)  # Attention scores
     duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
-    model = models.Model(inputs=[note_inputs, durations_inputs], outputs=[note_outputs, duration_outputs])
+    model = models.Model(inputs=[note_inputs, duration_inputs], outputs=[note_outputs, duration_outputs])
     model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
     model.summary()
     plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
@@ -171,7 +167,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     timestr = time.strftime("%Y%m%d-%H%M%S")
     midi_stream.write("midi", fp=os.path.join(f"Data\\Generated\\{dataset}", "output-" + timestr + ".mid"))
 
-    max_pitch = 70
+    max_pitch = 127  # 70
     seq_len = len(info)
     grid = np.zeros((max_pitch, seq_len), dtype=np.float32)
 
@@ -516,11 +512,9 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Soprano", epochs=10)
+    train_composition_model("Combined", epochs=2)
     voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     for voice_dataset in voices_datasets:
         # train_duration_model(voice_dataset, epochs=100)
-        pass
-    for voice_dataset in voices_datasets:
         # train_composition_model(voice_dataset, epochs=100)
         pass

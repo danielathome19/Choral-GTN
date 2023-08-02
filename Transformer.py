@@ -1,3 +1,4 @@
+import music21.clef
 import tensorflow as tf
 from data_utils import *
 from keras import layers, callbacks, models
@@ -144,7 +145,7 @@ class MusicGenerator(callbacks.Callback):
             duration_probs,
         )
 
-    def generate(self, start_notes, start_durations, max_tokens, temperature):
+    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="treble"):
         attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
         start_note_tokens = [self.note_to_index.get(x, 1) for x in start_notes]
         start_duration_tokens = [self.duration_to_index.get(x, 1) for x in start_durations]
@@ -152,7 +153,12 @@ class MusicGenerator(callbacks.Callback):
         sample_duration = None
         info = []
         midi_stream = music21.stream.Stream()
-        midi_stream.append(music21.clef.BassClef())
+        if clef == "treble":
+            music21.clef.TrebleClef()
+        elif clef == "bass":
+            music21.clef.BassClef()
+        elif clef == "tenor":
+            music21.clef.Treble8vbClef()
 
         for sample_note, sample_duration in zip(start_notes, start_durations):
             new_note = get_midi_note(sample_note, sample_duration)
