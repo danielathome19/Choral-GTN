@@ -45,6 +45,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     """Trains a Transformer model to generate notes and times."""
     PARSE_MIDI_FILES = not os.path.exists(f"Data\\Glob\\{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data\\Glob\\{dataset}_"
+    POLYPHONIC = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
     EMBEDDING_DIM = 256
@@ -64,7 +65,8 @@ def train_composition_model(dataset="Soprano", epochs=100):
 
     if PARSE_MIDI_FILES:
         print(f"Parsing {len(file_list)} {dataset} midi files...")
-        notes, durations = parse_midi_files(file_list, parser, SEQ_LEN + 1, PARSED_DATA_PATH)
+        notes, durations = parse_midi_files(file_list, parser, SEQ_LEN + 1, PARSED_DATA_PATH,
+                                            verbose=True, enable_chords=POLYPHONIC, limit=None)
     else:
         notes, durations = load_parsed_files(PARSED_DATA_PATH)
 
@@ -88,13 +90,13 @@ def train_composition_model(dataset="Soprano", epochs=100):
     notes_vocab_size = len(notes_vocab)
     durations_vocab_size = len(durations_vocab)
 
-    # Display some token:note mappings
+    # # Display some token:note mappings
     # print(f"\nNOTES_VOCAB: length = {len(notes_vocab)}")
     # for i, note in enumerate(notes_vocab[:10]):
     #     print(f"{i}: {note}")
-
+    #
     # print(f"\nDURATIONS_VOCAB: length = {len(durations_vocab)}")
-    # Display some token:duration mappings
+    # # Display some token:duration mappings
     # for i, note in enumerate(durations_vocab[:10]):
     #     print(f"{i}: {note}")
 
@@ -512,9 +514,9 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Combined", epochs=2)
-    voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
-    for voice_dataset in voices_datasets:
-        # train_duration_model(voice_dataset, epochs=100)
-        # train_composition_model(voice_dataset, epochs=100)
-        pass
+    train_composition_model("Combined", epochs=3)
+    # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
+    # for voice_dataset in voices_datasets:
+    #     # train_duration_model(voice_dataset, epochs=100)
+    #     # train_composition_model(voice_dataset, epochs=100)
+    #     pass

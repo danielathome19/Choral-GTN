@@ -9,6 +9,7 @@ from keras import layers
 from fractions import Fraction
 
 
+# region Dataframes
 def note_number_to_name(note_number):
     """Converts a MIDI note number to a note name with pitch class."""
     note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -125,12 +126,16 @@ def build_dataset(data_dir):
 
 def save_dataset(dataframe, output_file):
     dataframe.to_csv(output_file, index=False, sep=';')
+# endregion Dataframes
 
 
-def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False):
+# region VoiceTransformer
+def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, enable_chords=False, limit=None):
     notes = []
     durations = []
 
+    if limit is not None:
+        file_list = file_list[:limit]
     for i, file in enumerate(file_list):
         if verbose:
             print(i + 1, "Parsing %s" % file)
@@ -140,6 +145,7 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
         for element in score.flat:
             note_name = None
             duration_name = None
+            # TODO: add instance for clef?
             if isinstance(element, music21.key.Key):
                 note_name = str(element.tonic.name) + ":" + str(element.mode)
                 duration_name = "0.0"
@@ -147,7 +153,8 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
                 note_name = str(element.ratioString) + "TS"
                 duration_name = "0.0"
             elif isinstance(element, music21.chord.Chord):
-                note_name = element.pitches[-1].nameWithOctave
+                note_name = '.'.join(n.nameWithOctave for n in element.pitches) if enable_chords \
+                            else element.pitches[-1].nameWithOctave
                 duration_name = str(element.duration.quarterLength)
             elif isinstance(element, music21.note.Rest):
                 note_name = str(element.name)
@@ -203,24 +210,24 @@ def get_midi_note(sample_note, sample_duration):
     elif sample_note == "rest":
         new_note = music21.note.Rest()
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Violoncello()
+        new_note.storedInstrument = music21.instrument.Vocalist()
     elif "." in sample_note:
         notes_in_chord = sample_note.split(".")
         chord_notes = []
         for current_note in notes_in_chord:
             n = music21.note.Note(current_note)
             n.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-            n.storedInstrument = music21.instrument.Violoncello()
+            n.storedInstrument = music21.instrument.Vocalist()
             chord_notes.append(n)
         new_note = music21.chord.Chord(chord_notes)
     elif sample_note == "rest":
         new_note = music21.note.Rest()
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Violoncello()
+        new_note.storedInstrument = music21.instrument.Vocalist()
     elif sample_note != "START":
         new_note = music21.note.Note(sample_note)
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Violoncello()
+        new_note.storedInstrument = music21.instrument.Vocalist()
     return new_note
 
 
@@ -251,6 +258,7 @@ def compile_midi_from_voices():
         new_midi.save(os.path.join(os.getcwd(), "Data\\MIDI\\VoiceParts\\Combined", filename))
         print("Saved file: " + filename)
     pass
+# endregion VoiceTransformer
 
 
 if __name__ == "__main__":
@@ -260,8 +268,8 @@ if __name__ == "__main__":
     # pd.set_option('display.max_columns', None)
     # print(df_mid)
     # print(transpose_df_to_row(df_mid))
-    compile_midi_from_voices()
-    quit()
+    # compile_midi_from_voices()
+    # quit()
 
     SOPRANO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Soprano\Isolated")
     ALTO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Alto\Isolated")

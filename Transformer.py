@@ -134,7 +134,6 @@ class MusicGenerator(callbacks.Callback):
             sample_duration = self.index_to_duration[sample_duration_idx]
 
         new_note = get_midi_note(sample_note, sample_duration)
-
         return (
             new_note,
             sample_note_idx,
@@ -154,11 +153,12 @@ class MusicGenerator(callbacks.Callback):
         info = []
         midi_stream = music21.stream.Stream()
         if clef == "treble":
-            music21.clef.TrebleClef()
+            midi_stream.append(music21.clef.TrebleClef())
         elif clef == "bass":
-            music21.clef.BassClef()
+            midi_stream.append(music21.clef.BassClef())
         elif clef == "tenor":
-            music21.clef.Treble8vbClef()
+            midi_stream.append(music21.clef.Treble8vbClef())
+        # TODO: fix generation for 4-voice harmony; maybe add chord voicing to token and split?
 
         for sample_note, sample_duration in zip(start_notes, start_durations):
             new_note = get_midi_note(sample_note, sample_duration)
@@ -216,4 +216,4 @@ class MusicGenerator(callbacks.Callback):
         midi_stream = info[-1]["midi"].chordify()
         if self.verbose:
             print(info[-1]["prompt"])
-        midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch).zfill(4) + ".mid"))
+        midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch+1).zfill(4) + ".mid"))
