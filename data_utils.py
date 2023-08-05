@@ -1,3 +1,4 @@
+import glob
 import os
 import mido
 import music21
@@ -192,7 +193,11 @@ def create_transformer_dataset(elements, batch_size=256):
     return ds, vectorize_layer, vocab
 
 
-def load_parsed_files(parsed_data_path):
+def load_parsed_files(parsed_data_path, from_slices=False):
+    if from_slices:
+        notes = load_pickle_from_slices(parsed_data_path + "notes")
+        durations = load_pickle_from_slices(parsed_data_path + "durations")
+        return notes, durations
     with open((parsed_data_path + "notes.pkl"), "rb") as f:
         notes = pkl.load(f)
     with open((parsed_data_path + "durations.pkl"), "rb") as f:
@@ -258,6 +263,42 @@ def compile_midi_from_voices():
         new_midi.save(os.path.join(os.getcwd(), "Data\\MIDI\\VoiceParts\\Combined", filename))
         print("Saved file: " + filename)
     pass
+
+
+def slice_pickle(path, slices=4):
+    """Slices a pickle file into smaller pieces for easier uploading to GitHub."""
+    with open(path, "rb") as f:
+        data = pkl.load(f)
+        print("Found data of length:", len(data))
+    slice_size = len(data) // slices
+    for i in range(slices):
+        start_index = i * slice_size
+        end_index = (i + 1) * slice_size if i != slices - 1 else len(data)
+        slice_data = data[start_index:end_index]
+        base_name = os.path.basename(path)
+        name, ext = os.path.splitext(base_name)
+        output_path = os.path.join(os.path.dirname(path), f"{name}_{i + 1}{ext}")
+        with open(output_path, 'wb') as f:
+            pkl.dump(slice_data, f)
+        print(f"Saved slice {i + 1} to {output_path}")
+
+
+def load_pickle_from_slices(filename):
+    """Loads a pickle file that has been sliced into smaller pieces for easier uploading to GitHub."""
+    dir_name = os.path.dirname(filename)
+    base_name = os.path.basename(filename)
+    # name, ext = os.path.splitext(base_name)
+    slice_files = sorted(glob.glob(os.path.join(dir_name, f"{base_name}_*.pkl")))  # {name}_*{ext}
+    if not slice_files:
+        raise ValueError(f"No sliced pickle files found for {filename}")
+    combined_data = []
+    for slice_file in slice_files:
+        with open(slice_file, 'rb') as f:
+            slice_data = pkl.load(f)
+            combined_data.extend(slice_data)
+    print("Loaded data of length:", len(combined_data))
+    return combined_data
+
 # endregion VoiceTransformer
 
 
@@ -269,6 +310,10 @@ if __name__ == "__main__":
     # print(df_mid)
     # print(transpose_df_to_row(df_mid))
     # compile_midi_from_voices()
+    # slice_pickle("Data\\Glob\\Combined\\Combined_notes.pkl")
+    # slice_pickle("Data\\Glob\\Combined\\Combined_durations.pkl")
+    # load_pickle_from_slices("Data\\Glob\\Combined\\Combined_notes")
+    # load_pickle_from_slices("Data\\Glob\\Combined\\Combined_durations")
     # quit()
 
     SOPRANO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Soprano\Isolated")

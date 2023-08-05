@@ -68,7 +68,11 @@ def train_composition_model(dataset="Soprano", epochs=100):
         notes, durations = parse_midi_files(file_list, parser, SEQ_LEN + 1, PARSED_DATA_PATH,
                                             verbose=True, enable_chords=POLYPHONIC, limit=None)
     else:
-        notes, durations = load_parsed_files(PARSED_DATA_PATH)
+        if dataset != "Combined":
+            notes, durations = load_parsed_files(PARSED_DATA_PATH)
+        else:
+            notes = load_pickle_from_slices(f"Data\\Glob\\Combined\\Combined_notes")
+            durations = load_pickle_from_slices(f"Data\\Glob\\Combined\\Combined_durations")
 
     example_notes = notes[658]
     # example_durations = durations[658]
