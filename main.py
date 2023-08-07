@@ -155,6 +155,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
 
     if LOAD_MODEL:
         model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
+        print("Loaded model weights")
 
     checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/{dataset}/checkpoint.ckpt",
                                                     save_weights_only=True, save_freq="epoch", verbose=0)
