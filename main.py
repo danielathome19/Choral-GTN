@@ -42,8 +42,8 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 def train_composition_model(dataset="Soprano", epochs=100):
     """Trains a Transformer model to generate notes and times."""
-    PARSE_MIDI_FILES = not os.path.exists(f"Data\\Glob\\{dataset}_notes.pkl")
-    PARSED_DATA_PATH = f"Data\\Glob\\{dataset}_"
+    PARSE_MIDI_FILES = False  # not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
+    PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
@@ -57,9 +57,9 @@ def train_composition_model(dataset="Soprano", epochs=100):
     GENERATE_LEN = 50
 
     if dataset != "Combined":
-        file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\Isolated\\*.mid")
+        file_list = glob.glob(f"Data/MIDI/VoiceParts/{dataset}/Isolated/*.mid")
     else:
-        file_list = glob.glob(f"Data\\MIDI\\VoiceParts\\{dataset}\\*.mid")
+        file_list = glob.glob(f"Data/MIDI/VoiceParts/{dataset}/*.mid")
     parser = music21.converter
 
     if PARSE_MIDI_FILES:
@@ -70,8 +70,9 @@ def train_composition_model(dataset="Soprano", epochs=100):
         if dataset != "Combined":
             notes, durations = load_parsed_files(PARSED_DATA_PATH)
         else:
-            notes = load_pickle_from_slices(f"Data\\Glob\\Combined\\Combined_notes")
-            durations = load_pickle_from_slices(f"Data\\Glob\\Combined\\Combined_durations")
+            notes = load_pickle_from_slices(f"Data/Glob/Combined/Combined_notes")
+            durations = load_pickle_from_slices(f"Data/Glob/Combined/Combined_durations")
+            print(len(notes), len(durations))
 
     example_notes = notes[658]
     # example_durations = durations[658]
@@ -150,27 +151,27 @@ def train_composition_model(dataset="Soprano", epochs=100):
     model = models.Model(inputs=[note_inputs, duration_inputs], outputs=[note_outputs, duration_outputs])
     model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
     model.summary()
-    plot_model(model, to_file=f'Images\\{dataset}_composition_model.png',
+    plot_model(model, to_file=f'Images/{dataset}_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
     if LOAD_MODEL:
-        model.load_weights(f"Weights\\Composition\\{dataset}\\checkpoint.ckpt")
-        # model.load_model(f"Weights\\Composition\\{dataset}", compile=True)
+        model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
+        # model.load_model(f"Weights/Composition/{dataset}", compile=True)
 
-    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights\\Composition\\{dataset}\\checkpoint.ckpt",
+    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/{dataset}/checkpoint.ckpt",
                                                     save_weights_only=True, save_freq="epoch", verbose=0)
-    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs\\{dataset}")
+    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/{dataset}")
 
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
     model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator])
-    model.save(f"Weights\\Composition\\{dataset}")
+    model.save(f"Weights/Composition/{dataset}")
 
     # Test the model
     info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
     midi_stream = info[-1]["midi"].chordify()
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    midi_stream.write("midi", fp=os.path.join(f"Data\\Generated\\{dataset}", "output-" + timestr + ".mid"))
+    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid"))
 
     max_pitch = 127  # 70
     seq_len = len(info)
@@ -224,7 +225,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
 
 def train_duration_model(dataset="Soprano", epochs=100):
     """Trains a Bi-LSTM model to predict the duration of the next note given the previous note and duration."""
-    df = pd.read_csv(f"Data\\Tabular\\{dataset}.csv", sep=';')
+    df = pd.read_csv(f"Data/Tabular/{dataset}.csv", sep=';')
     df = df[['event', 'time']]
 
     # Normalize the data
@@ -263,16 +264,16 @@ def train_duration_model(dataset="Soprano", epochs=100):
     model.add(layers.TimeDistributed(layers.Dense(1, activation='linear')))
     model.compile(loss='mse', optimizer='adam', metrics=['mae'])
     model.summary()
-    plot_model(model, to_file=f'Images\\{dataset}_duration_model.png', show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file=f'Images/{dataset}_duration_model.png', show_shapes=True, show_layer_names=True)
 
     model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_data=(X_test, y_test))
     plot_histories(model, 'loss', 'val_loss', f"{dataset} Duration Model Loss (MSE)", 'Loss (MSE)')
     plot_histories(model, 'mae', 'val_mae', f"{dataset} Duration Model MAE", 'MAE')
 
     # Save the model, scaler, and max length (all 3 max lengths should be the same)
-    model.save(f"Weights\\Duration\\{dataset}_model.h5")
-    pkl.dump(scaler, open(f"Weights\\Duration\\{dataset}_time_scaler.pkl", 'wb'))
-    pkl.dump(max_event_len, open(f"Weights\\Duration\\{dataset}_seq_len.pkl", 'wb'))
+    model.save(f"Weights/Duration/{dataset}_model.h5")
+    pkl.dump(scaler, open(f"Weights/Duration/{dataset}_time_scaler.pkl", 'wb'))
+    pkl.dump(max_event_len, open(f"Weights/Duration/{dataset}_seq_len.pkl", 'wb'))
 
     # Test the model with the first event array; pad the arrays to match the max lengths and then trim after prediction
     event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)
@@ -295,7 +296,7 @@ def train_duration_model(dataset="Soprano", epochs=100):
 
 def train_tempo_model(epochs=50):
     """Trains an LSTM model to predict the tempo of a piece based on the events and event times."""
-    df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
+    df = pd.read_csv(f"Data/Tabular/Soprano.csv", sep=';')
     df = df[['event', 'time', 'tempo']]
 
     # Normalize the data
@@ -332,17 +333,17 @@ def train_tempo_model(epochs=50):
     model.add(layers.TimeDistributed(layers.Dense(1, activation='linear')))
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     model.summary()
-    plot_model(model, to_file=f'Images\\tempo_model.png', show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file=f'Images/tempo_model.png', show_shapes=True, show_layer_names=True)
 
     model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_data=(X_test, y_test))
     plot_histories(model, 'loss', 'val_loss', "Tempo Model Loss (MSE)", 'Loss')
     plot_histories(model, 'mae', 'val_mae', "Tempo Model MAE", 'MAE')
 
     # Save the model, scalers, and max length
-    model.save(f"Weights\\Tempo\\model.h5")
-    pkl.dump(time_scaler, open(f"Weights\\Tempo\\time_scaler.pkl", 'wb'))
-    pkl.dump(tempo_scaler, open(f"Weights\\Tempo\\tempo_scaler.pkl", 'wb'))
-    pkl.dump(max_event_len, open(f"Weights\\Tempo\\seq_len.pkl", 'wb'))
+    model.save(f"Weights/Tempo/model.h5")
+    pkl.dump(time_scaler, open(f"Weights/Tempo/time_scaler.pkl", 'wb'))
+    pkl.dump(tempo_scaler, open(f"Weights/Tempo/tempo_scaler.pkl", 'wb'))
+    pkl.dump(max_event_len, open(f"Weights/Tempo/seq_len.pkl", 'wb'))
 
     # Test the model with the first event array; pad the arrays to match the max lengths and then trim after prediction
     event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)
@@ -367,7 +368,7 @@ def train_tempo_model(epochs=50):
 
 def train_time_signature_model(epochs=50):
     """Trains an LSTM model to predict the time signature(s) of a piece based on the events and event times."""
-    df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
+    df = pd.read_csv(f"Data/Tabular/Soprano.csv", sep=';')
     df = df[['event', 'time', 'time_signature_count', 'time_signature_beat']]
 
     # Normalize the data
@@ -412,16 +413,16 @@ def train_time_signature_model(epochs=50):
     model.add(layers.TimeDistributed(layers.Dense(2)))
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     model.summary()
-    plot_model(model, to_file=f'Images\\time_sig_model.png', show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file=f'Images/time_sig_model.png', show_shapes=True, show_layer_names=True)
 
     model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test))
     plot_histories(model, 'loss', 'val_loss', "Time Signature Model Loss (MSE)", 'Loss')
     plot_histories(model, 'mae', 'val_mae', "Time Signature Model MAE", 'MAE')
 
     # Save the model
-    model.save(f"Weights\\TimeSignature\\model.h5")
-    pkl.dump(scaler, open(f"Weights\\TimeSignature\\time_sig_scaler.pkl", 'wb'))
-    pkl.dump(max_event_len, open(f"Weights\\TimeSignature\\seq_len.pkl", 'wb'))
+    model.save(f"Weights/TimeSignature/model.h5")
+    pkl.dump(scaler, open(f"Weights/TimeSignature/time_sig_scaler.pkl", 'wb'))
+    pkl.dump(max_event_len, open(f"Weights/TimeSignature/seq_len.pkl", 'wb'))
 
     # Test the model
     event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)
@@ -447,7 +448,7 @@ def train_time_signature_model(epochs=50):
 
 def train_key_model(epochs=10):
     """Trains a Bidirectional LSTM model to predict the key signature(s) of a piece based on the events."""
-    df = pd.read_csv(f"Data\\Tabular\\Soprano.csv", sep=';')
+    df = pd.read_csv(f"Data/Tabular/Soprano.csv", sep=';')
     df = df[['event', 'key_signature']]
 
     # Normalize the data
@@ -481,16 +482,16 @@ def train_key_model(epochs=10):
     model.add(layers.TimeDistributed(layers.Dense(1, activation='tanh')))
     model.compile(optimizer='adam', loss='mse', metrics=['mae'])
     model.summary()
-    plot_model(model, to_file=f'Images\\key_sig_model.png', show_shapes=True, show_layer_names=True)
+    plot_model(model, to_file=f'Images/key_sig_model.png', show_shapes=True, show_layer_names=True)
 
     model.fit(X_train, y_train, epochs=epochs, validation_data=(X_test, y_test))
     plot_histories(model, 'loss', 'val_loss', "Key Signature Model Loss (MSE)", 'Loss')
     plot_histories(model, 'mae', 'val_mae', "Key Signature Model MAE", 'MAE')
 
     # Save the model
-    model.save(f"Weights\\KeySignature\\model.h5")
-    pkl.dump(scaler, open(f"Weights\\KeySignature\\key_scaler.pkl", 'wb'))
-    pkl.dump(max_event_len, open(f"Weights\\KeySignature\\seq_len.pkl", 'wb'))
+    model.save(f"Weights/KeySignature/model.h5")
+    pkl.dump(scaler, open(f"Weights/KeySignature/key_scaler.pkl", 'wb'))
+    pkl.dump(max_event_len, open(f"Weights/KeySignature/seq_len.pkl", 'wb'))
 
     # Test the model
     event = np.concatenate([df['event'][0], np.full(max_event_len - len(df['event'][0]), -1)]).astype(int)

@@ -260,7 +260,7 @@ def compile_midi_from_voices():
                     for msg in track:
                         new_midi.tracks[0].append(msg)
         filename = soprano_file.split(".")[0] + "_all.mid"
-        new_midi.save(os.path.join(os.getcwd(), "Data\\MIDI\\VoiceParts\\Combined", filename))
+        new_midi.save(os.path.join(os.getcwd(), "Data/MIDI/VoiceParts/Combined", filename))
         print("Saved file: " + filename)
     pass
 
@@ -310,10 +310,10 @@ if __name__ == "__main__":
     # print(df_mid)
     # print(transpose_df_to_row(df_mid))
     # compile_midi_from_voices()
-    # slice_pickle("Data\\Glob\\Combined\\Combined_notes.pkl")
-    # slice_pickle("Data\\Glob\\Combined\\Combined_durations.pkl")
-    # load_pickle_from_slices("Data\\Glob\\Combined\\Combined_notes")
-    # load_pickle_from_slices("Data\\Glob\\Combined\\Combined_durations")
+    # slice_pickle("Data/Glob/Combined/Combined_notes.pkl")
+    # slice_pickle("Data/Glob/Combined/Combined_durations.pkl")
+    # load_pickle_from_slices("Data/Glob/Combined/Combined_notes")
+    # load_pickle_from_slices("Data/Glob/Combined/Combined_durations")
     # quit()
 
     SOPRANO_PATH = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Soprano\Isolated")

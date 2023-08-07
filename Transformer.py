@@ -104,7 +104,7 @@ class TransformerBlock(layers.Layer):
 
 class MusicGenerator(callbacks.Callback):
     def __init__(self, index_to_note, index_to_duration, top_k=10, generate_len=50,
-                 output_path="Data\\Generated\\Training", verbose=False):
+                 output_path="Data/Generated/Training", verbose=False):
         super().__init__()
         self.index_to_note = index_to_note
         self.note_to_index = {note: index for index, note in enumerate(index_to_note)}
