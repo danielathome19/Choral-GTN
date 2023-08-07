@@ -42,7 +42,7 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 def train_composition_model(dataset="Soprano", epochs=100):
     """Trains a Transformer model to generate notes and times."""
-    PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
+    PARSE_MIDI_FILES = False  # not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
     LOAD_MODEL = True
