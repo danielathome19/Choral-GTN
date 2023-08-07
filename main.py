@@ -42,7 +42,7 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 def train_composition_model(dataset="Soprano", epochs=100):
     """Trains a Transformer model to generate notes and times."""
-    PARSE_MIDI_FILES = False  # not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
+    PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
     LOAD_MODEL = True
@@ -62,7 +62,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
         file_list = glob.glob(f"Data/MIDI/VoiceParts/{dataset}/*.mid")
     parser = music21.converter
 
-    if PARSE_MIDI_FILES:
+    if PARSE_MIDI_FILES and dataset != "Combined":
         print(f"Parsing {len(file_list)} {dataset} midi files...")
         notes, durations = parse_midi_files(file_list, parser, SEQ_LEN + 1, PARSED_DATA_PATH,
                                             verbose=True, enable_chords=POLYPHONIC, limit=None)
