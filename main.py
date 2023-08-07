@@ -1,6 +1,5 @@
 import ast
 import sys
-import glob
 import time
 import logging
 import warnings

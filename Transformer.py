@@ -1,5 +1,4 @@
 import music21.clef
-import tensorflow as tf
 from data_utils import *
 from keras import layers, callbacks, models
 
