@@ -45,6 +45,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
+    LOAD_MODEL = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
     EMBEDDING_DIM = 256
@@ -52,7 +53,6 @@ def train_composition_model(dataset="Soprano", epochs=100):
     N_HEADS = 5
     DROPOUT_RATE = 0.3
     FEED_FORWARD_DIM = 256
-    LOAD_MODEL = False
     BATCH_SIZE = 256
     GENERATE_LEN = 50
 
@@ -155,7 +155,6 @@ def train_composition_model(dataset="Soprano", epochs=100):
 
     if LOAD_MODEL:
         model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
-        # model.load_model(f"Weights/Composition/{dataset}", compile=True)
 
     checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/{dataset}/checkpoint.ckpt",
                                                     save_weights_only=True, save_freq="epoch", verbose=0)
