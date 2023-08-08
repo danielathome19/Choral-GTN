@@ -1,0 +1,64 @@
+Epoch 1/100
+1942/1942 [==============================] - 465s 236ms/step - loss: 6.0461 - note_outputs_loss: 5.0173 - duration_outputs_loss: 1.0288
+Epoch 2/100
+1942/1942 [==============================] - 416s 214ms/step - loss: 5.3957 - note_outputs_loss: 4.5281 - duration_outputs_loss: 0.8676
+Epoch 3/100
+1942/1942 [==============================] - 419s 215ms/step - loss: 4.9757 - note_outputs_loss: 4.1260 - duration_outputs_loss: 0.8497
+Epoch 4/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 4.6121 - note_outputs_loss: 3.7758 - duration_outputs_loss: 0.8363
+Epoch 5/100
+1942/1942 [==============================] - 414s 213ms/step - loss: 4.3511 - note_outputs_loss: 3.5214 - duration_outputs_loss: 0.8297
+Epoch 6/100
+1942/1942 [==============================] - 416s 214ms/step - loss: 4.1417 - note_outputs_loss: 3.3163 - duration_outputs_loss: 0.8254
+Epoch 7/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 3.9649 - note_outputs_loss: 3.1441 - duration_outputs_loss: 0.8208
+Epoch 8/100
+1942/1942 [==============================] - 416s 214ms/step - loss: 3.8155 - note_outputs_loss: 2.9952 - duration_outputs_loss: 0.8203
+Epoch 9/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 3.6864 - note_outputs_loss: 2.8660 - duration_outputs_loss: 0.8203
+Epoch 10/100
+1942/1942 [==============================] - 414s 213ms/step - loss: 3.5743 - note_outputs_loss: 2.7546 - duration_outputs_loss: 0.8197
+Epoch 11/100
+1942/1942 [==============================] - 419s 215ms/step - loss: 3.4711 - note_outputs_loss: 2.6556 - duration_outputs_loss: 0.8155
+Epoch 12/100
+1942/1942 [==============================] - 414s 213ms/step - loss: 3.3716 - note_outputs_loss: 2.5639 - duration_outputs_loss: 0.8077
+Epoch 13/100
+1942/1942 [==============================] - 418s 215ms/step - loss: 3.2889 - note_outputs_loss: 2.4810 - duration_outputs_loss: 0.8080
+Epoch 14/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 3.2169 - note_outputs_loss: 2.4099 - duration_outputs_loss: 0.8070
+Epoch 15/100
+1942/1942 [==============================] - 420s 216ms/step - loss: 3.1453 - note_outputs_loss: 2.3389 - duration_outputs_loss: 0.8064
+Epoch 16/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 3.0832 - note_outputs_loss: 2.2774 - duration_outputs_loss: 0.8058
+Epoch 17/100
+1942/1942 [==============================] - 421s 217ms/step - loss: 3.0259 - note_outputs_loss: 2.2216 - duration_outputs_loss: 0.8043
+Epoch 18/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 2.9705 - note_outputs_loss: 2.1660 - duration_outputs_loss: 0.8045
+Epoch 19/100
+1942/1942 [==============================] - 416s 214ms/step - loss: 2.9170 - note_outputs_loss: 2.1134 - duration_outputs_loss: 0.8037
+Epoch 20/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 2.8688 - note_outputs_loss: 2.0662 - duration_outputs_loss: 0.8027
+Epoch 21/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 2.8230 - note_outputs_loss: 2.0212 - duration_outputs_loss: 0.8018
+Epoch 22/100
+1942/1942 [==============================] - 418s 215ms/step - loss: 2.7850 - note_outputs_loss: 1.9818 - duration_outputs_loss: 0.8032
+Epoch 23/100
+1942/1942 [==============================] - 418s 215ms/step - loss: 2.7426 - note_outputs_loss: 1.9408 - duration_outputs_loss: 0.8018
+Epoch 24/100
+1942/1942 [==============================] - 414s 213ms/step - loss: 2.7044 - note_outputs_loss: 1.9031 - duration_outputs_loss: 0.8013
+Epoch 25/100
+1942/1942 [==============================] - 419s 216ms/step - loss: 2.6697 - note_outputs_loss: 1.8685 - duration_outputs_loss: 0.8012
+Epoch 26/100
+1942/1942 [==============================] - 416s 213ms/step - loss: 2.6386 - note_outputs_loss: 1.8354 - duration_outputs_loss: 0.8032
+Epoch 27/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 2.6032 - note_outputs_loss: 1.8015 - duration_outputs_loss: 0.8017
+Epoch 28/100
+1942/1942 [==============================] - 417s 214ms/step - loss: 2.5714 - note_outputs_loss: 1.7692 - duration_outputs_loss: 0.8022
+Epoch 29/100
+1942/1942 [==============================] - 417s 215ms/step - loss: 2.5412 - note_outputs_loss: 1.7406 - duration_outputs_loss: 0.8006
+Epoch 30/100
+1942/1942 [==============================] - 418s 214ms/step - loss: 2.5157 - note_outputs_loss: 1.7147 - duration_outputs_loss: 0.8010
+Epoch 31/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 2.4878 - note_outputs_loss: 1.6869 - duration_outputs_loss: 0.8009
+Epoch 32/100
+1942/1942 [==============================] - 415s 213ms/step - loss: 2.4621 - note_outputs_loss: 1.6606 - duration_outputs_loss: 0.8015

@@ -16,3 +16,4 @@ librosa~=0.10.0.post2
 seaborn~=0.12.2
 scikit-image~=0.21.0
 midi2audio~=0.1.1
+pretty-midi~=0.2.10

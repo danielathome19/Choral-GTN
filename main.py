@@ -46,6 +46,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
     LOAD_MODEL = True
+    INCLUDE_AUGMENTED = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
     EMBEDDING_DIM = 256
@@ -70,8 +71,8 @@ def train_composition_model(dataset="Soprano", epochs=100):
         if dataset != "Combined":
             notes, durations = load_parsed_files(PARSED_DATA_PATH)
         else:
-            notes = load_pickle_from_slices(f"Data/Glob/Combined/Combined_notes")
-            durations = load_pickle_from_slices(f"Data/Glob/Combined/Combined_durations")
+            notes = load_pickle_from_slices(f"Data/Glob/Combined/Combined_notes", INCLUDE_AUGMENTED)
+            durations = load_pickle_from_slices(f"Data/Glob/Combined/Combined_durations", INCLUDE_AUGMENTED)
 
     example_notes = notes[658]
     # example_durations = durations[658]
@@ -513,7 +514,7 @@ def train_key_model(epochs=10):
 
 
 if __name__ == '__main__':
-    print("Hello world!")
+    print("Hello, world!")
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
