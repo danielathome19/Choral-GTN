@@ -45,7 +45,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
-    LOAD_MODEL = True
+    LOAD_MODEL = False
     INCLUDE_AUGMENTED = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50

@@ -410,7 +410,6 @@ def load_pickle_from_slices(filename, include_augmented=False):
         base, dset = base_name.split("_")[:2]
         slice_files.extend(sorted(glob.glob(os.path.join(dir_name, f"{base}_aug*{dset}*.pkl"))))
         slice_files = sorted(slice_files)
-        print("Found augmented files:", slice_files)
     if not slice_files:
         raise ValueError(f"No sliced pickle files found for {filename}")
     combined_data = []
