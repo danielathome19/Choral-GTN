@@ -40,20 +40,32 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
         plt.savefig(filename)
 
 
+def build_model(notes_vocab_size, durations_vocab_size,
+                embedding_dim=256, feed_forward_dim=256, num_heads=5, key_dim=256, dropout_rate=0.3):
+    note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
+    duration_inputs = layers.Input(shape=(None,), dtype=tf.int32)
+    note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, embedding_dim // 2)(note_inputs)
+    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, embedding_dim // 2)(duration_inputs)
+    embeddings = layers.Concatenate()([note_embeddings, duration_embeddings])
+    x, attention_scores = TransformerBlock(name="attention", embed_dim=embedding_dim, ff_dim=feed_forward_dim,
+                                           num_heads=num_heads, key_dim=key_dim, dropout_rate=dropout_rate)(embeddings)
+    note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)  # Attention scores
+    duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
+    model = models.Model(inputs=[note_inputs, duration_inputs], outputs=[note_outputs, duration_outputs])
+    model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
+    model.summary()
+    return model
+
+
 def train_composition_model(dataset="Soprano", epochs=100):
     """Trains a Transformer model to generate notes and times."""
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
-    LOAD_MODEL = False
+    LOAD_MODEL = True
     INCLUDE_AUGMENTED = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
-    EMBEDDING_DIM = 256
-    KEY_DIM = 256
-    N_HEADS = 5
-    DROPOUT_RATE = 0.3
-    FEED_FORWARD_DIM = 256
     BATCH_SIZE = 256
     GENERATE_LEN = 50
 
@@ -94,6 +106,12 @@ def train_composition_model(dataset="Soprano", epochs=100):
     notes_vocab_size = len(notes_vocab)
     durations_vocab_size = len(durations_vocab)
 
+    # Save vocabularies
+    with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "wb") as f:
+        pkl.dump(notes_vocab, f)
+    with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "wb") as f:
+        pkl.dump(durations_vocab, f)
+
     # # Display some token:note mappings
     # print(f"\nNOTES_VOCAB: length = {len(notes_vocab)}")
     # for i, note in enumerate(notes_vocab[:10]):
@@ -123,34 +141,19 @@ def train_composition_model(dataset="Soprano", epochs=100):
     token_embedding = tpe.token_emb(example_tokenised_notes)
     position_embedding = tpe.pos_emb(token_embedding)
     embedding = tpe(example_tokenised_notes)
-    plt.imshow(np.transpose(token_embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
-    plt.title("Token Embedding")
-    plt.xlabel("Token")
-    plt.ylabel("Embedding Dimension")
-    plt.show()
-    plt.imshow(np.transpose(position_embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
-    plt.title("Position Embedding")
-    plt.xlabel("Token")
-    plt.ylabel("Embedding Dimension")
-    plt.show()
-    plt.imshow(np.transpose(embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
-    plt.title("Token + Position Embedding")
-    plt.xlabel("Token")
-    plt.ylabel("Embedding Dimension")
-    plt.show()
 
-    note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    duration_inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, EMBEDDING_DIM // 2)(note_inputs)
-    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, EMBEDDING_DIM // 2)(duration_inputs)
-    embeddings = layers.Concatenate()([note_embeddings, duration_embeddings])
-    x, attention_scores = TransformerBlock(name="attention", embed_dim=EMBEDDING_DIM, ff_dim=FEED_FORWARD_DIM,
-                                           num_heads=N_HEADS, key_dim=KEY_DIM, dropout_rate=DROPOUT_RATE)(embeddings)
-    note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)  # Attention scores
-    duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
-    model = models.Model(inputs=[note_inputs, duration_inputs], outputs=[note_outputs, duration_outputs])
-    model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
-    model.summary()
+    def plot_embeddings(in_embedding, title):
+        plt.imshow(np.transpose(in_embedding), cmap="coolwarm", interpolation="nearest", origin="lower")
+        plt.title(title)
+        plt.xlabel("Token")
+        plt.ylabel("Embedding Dimension")
+        plt.show()
+
+    plot_embeddings(token_embedding, "Token Embedding")
+    plot_embeddings(position_embedding, "Position Embedding")
+    plot_embeddings(embedding, "Token + Position Embedding")
+
+    model = build_model(notes_vocab_size, durations_vocab_size)
     plot_model(model, to_file=f'Images/{dataset}_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
@@ -165,7 +168,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
     model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator])
-    model.save(f"Weights/Composition/{dataset}")
+    model.save(f"Weights/Composition/{dataset}.h5")
 
     # Test the model
     info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
