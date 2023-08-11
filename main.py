@@ -63,6 +63,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
     LOAD_MODEL = True
+    PLOT_TEST = False
     INCLUDE_AUGMENTED = True
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
@@ -176,54 +177,55 @@ def train_composition_model(dataset="Soprano", epochs=100):
     timestr = time.strftime("%Y%m%d-%H%M%S")
     midi_stream.write("midi", fp=os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid"))
 
-    max_pitch = 127  # 70
-    seq_len = len(info)
-    grid = np.zeros((max_pitch, seq_len), dtype=np.float32)
+    if PLOT_TEST:
+        max_pitch = 127  # 70
+        seq_len = len(info)
+        grid = np.zeros((max_pitch, seq_len), dtype=np.float32)
 
-    for j in range(seq_len):
-        for i, prob in enumerate(info[j]["note_probs"]):
-            try:
-                pitch = music21.note.Note(notes_vocab[i]).pitch.midi
-                grid[pitch, j] = prob
-            except:
-                pass
+        for j in range(seq_len):
+            for i, prob in enumerate(info[j]["note_probs"]):
+                try:
+                    pitch = music21.note.Note(notes_vocab[i]).pitch.midi
+                    grid[pitch, j] = prob
+                except:
+                    pass
 
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_yticks([int(j) for j in range(35, 70)])
-    plt.imshow(grid[35:70, :], origin="lower", cmap="coolwarm", vmin=-0.5, vmax=0.5, extent=[0, seq_len, 35, 70])
-    plt.title("Note Probabilities")
-    plt.xlabel("Timestep")
-    plt.ylabel("Pitch")
-    plt.show()
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.set_yticks([int(j) for j in range(35, 70)])
+        plt.imshow(grid[35:70, :], origin="lower", cmap="coolwarm", vmin=-0.5, vmax=0.5, extent=[0, seq_len, 35, 70])
+        plt.title("Note Probabilities")
+        plt.xlabel("Timestep")
+        plt.ylabel("Pitch")
+        plt.show()
 
-    plot_size = 20
-    att_matrix = np.zeros((plot_size, plot_size))
-    prediction_output = []
-    last_prompt = []
+        plot_size = 20
+        att_matrix = np.zeros((plot_size, plot_size))
+        prediction_output = []
+        last_prompt = []
 
-    for j in range(plot_size):
-        atts = info[j]["atts"].max(axis=0)
-        att_matrix[: (j + 1), j] = atts
-        prediction_output.append(info[j]["chosen_note"][0])
-        last_prompt.append(info[j]["prompt"][0][-1])
+        for j in range(plot_size):
+            atts = info[j]["atts"].max(axis=0)
+            att_matrix[: (j + 1), j] = atts
+            prediction_output.append(info[j]["chosen_note"][0])
+            last_prompt.append(info[j]["prompt"][0][-1])
 
-    fig, ax = plt.subplots(figsize=(8, 8))
-    im = ax.imshow(att_matrix, cmap="Greens", interpolation="nearest")
-    ax.set_xticks(np.arange(-0.5, plot_size, 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, plot_size, 1), minor=True)
-    ax.grid(which="minor", color="black", linestyle="-", linewidth=1)
-    ax.set_xticks(np.arange(plot_size))
-    ax.set_yticks(np.arange(plot_size))
-    ax.set_xticklabels(prediction_output[:plot_size])
-    ax.set_yticklabels(last_prompt[:plot_size])
-    ax.xaxis.tick_top()
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="left", va="center", rotation_mode="anchor")
-    plt.title("Attention Matrix")
-    plt.xlabel("Predicted Output")
-    plt.ylabel("Last Prompt")
-    plt.show()
+        fig, ax = plt.subplots(figsize=(8, 8))
+        im = ax.imshow(att_matrix, cmap="Greens", interpolation="nearest")
+        ax.set_xticks(np.arange(-0.5, plot_size, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, plot_size, 1), minor=True)
+        ax.grid(which="minor", color="black", linestyle="-", linewidth=1)
+        ax.set_xticks(np.arange(plot_size))
+        ax.set_yticks(np.arange(plot_size))
+        ax.set_xticklabels(prediction_output[:plot_size])
+        ax.set_yticklabels(last_prompt[:plot_size])
+        ax.xaxis.tick_top()
+        plt.setp(ax.get_xticklabels(), rotation=90, ha="left", va="center", rotation_mode="anchor")
+        plt.title("Attention Matrix")
+        plt.xlabel("Predicted Output")
+        plt.ylabel("Last Prompt")
+        plt.show()
 
-    pass
+        pass
 
 
 def train_duration_model(dataset="Soprano", epochs=100):
