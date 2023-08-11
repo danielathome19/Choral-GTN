@@ -521,7 +521,7 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Combined", epochs=100)
+    train_composition_model("Combined", epochs=2)
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:
     #     # train_duration_model(voice_dataset, epochs=100)
