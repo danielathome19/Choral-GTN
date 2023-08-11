@@ -169,7 +169,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
     model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator])
-    model.save(f"Weights/Composition/{dataset}.h5")
+    model.save(f"Weights/Composition/{dataset}.keras")
 
     # Test the model
     info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
