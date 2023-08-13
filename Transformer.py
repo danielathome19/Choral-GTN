@@ -143,7 +143,9 @@ class MusicGenerator(callbacks.Callback):
             duration_probs,
         )
 
-    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="treble"):
+    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="treble", test_model=None):
+        if test_model is not None:
+            self.model = test_model
         attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
         start_note_tokens = [self.note_to_index.get(x, 1) for x in start_notes]
         start_duration_tokens = [self.duration_to_index.get(x, 1) for x in start_durations]

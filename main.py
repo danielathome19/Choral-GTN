@@ -3,6 +3,8 @@ import sys
 import time
 import logging
 import warnings
+
+import keras.models
 import matplotlib.pyplot as plt
 from Transformer import *
 from keras import layers
@@ -40,6 +42,22 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
         plt.savefig(filename)
 
 
+def generate_composition(dataset="Combined_augmented", generate_len=50, num_to_generate=3):
+    with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "rb") as f:
+        notes_vocab = pkl.load(f)
+    with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
+        durations_vocab = pkl.load(f)
+    model = build_model(len(notes_vocab), len(durations_vocab))
+    model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
+    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
+    for _ in range(num_to_generate):
+        info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5, test_model=model)
+        midi_stream = info[-1]["midi"].chordify()
+        timestr = time.strftime("%Y%m%d-%H%M%S")
+        midi_stream.write("midi", fp=os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid"))
+    pass
+
+
 def build_model(notes_vocab_size, durations_vocab_size,
                 embedding_dim=256, feed_forward_dim=256, num_heads=5, key_dim=256, dropout_rate=0.3):
     note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
@@ -57,14 +75,14 @@ def build_model(notes_vocab_size, durations_vocab_size,
     return model
 
 
-def train_composition_model(dataset="Soprano", epochs=100):
+def train_composition_model(dataset="Soprano", epochs=100, load_augmented_dataset=False):
     """Trains a Transformer model to generate notes and times."""
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
-    LOAD_MODEL = True
+    LOAD_MODEL = False
     PLOT_TEST = False
-    INCLUDE_AUGMENTED = True
+    INCLUDE_AUGMENTED = load_augmented_dataset
     DATASET_REPETITIONS = 1
     SEQ_LEN = 50
     BATCH_SIZE = 256
@@ -86,6 +104,8 @@ def train_composition_model(dataset="Soprano", epochs=100):
         else:
             notes = load_pickle_from_slices(f"Data/Glob/Combined/Combined_notes", INCLUDE_AUGMENTED)
             durations = load_pickle_from_slices(f"Data/Glob/Combined/Combined_durations", INCLUDE_AUGMENTED)
+            if INCLUDE_AUGMENTED:
+                dataset += "_augmented"
 
     example_notes = notes[658]
     # example_durations = durations[658]
@@ -154,7 +174,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
     plot_embeddings(position_embedding, "Position Embedding")
     plot_embeddings(embedding, "Token + Position Embedding")
 
-    model = build_model(notes_vocab_size, durations_vocab_size)
+    model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
     plot_model(model, to_file=f'Images/{dataset}_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
@@ -210,7 +230,7 @@ def train_composition_model(dataset="Soprano", epochs=100):
             last_prompt.append(info[j]["prompt"][0][-1])
 
         fig, ax = plt.subplots(figsize=(8, 8))
-        im = ax.imshow(att_matrix, cmap="Greens", interpolation="nearest")
+        _ = ax.imshow(att_matrix, cmap="Greens", interpolation="nearest")
         ax.set_xticks(np.arange(-0.5, plot_size, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, plot_size, 1), minor=True)
         ax.grid(which="minor", color="black", linestyle="-", linewidth=1)
@@ -523,7 +543,8 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Combined", epochs=2)
+    train_composition_model("Combined", epochs=100)
+    # generate_composition()
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:
     #     # train_duration_model(voice_dataset, epochs=100)
