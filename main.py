@@ -45,14 +45,23 @@ def generate_composition(dataset="Combined_augmented", generate_len=50, num_to_g
         notes_vocab = pkl.load(f)
     with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
         durations_vocab = pkl.load(f)
-    model = build_model(len(notes_vocab), len(durations_vocab))
+    model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
     model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
-    for _ in range(num_to_generate):
-        info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5, test_model=model)
-        midi_stream = info[-1]["midi"].chordify()
-        timestr = time.strftime("%Y%m%d-%H%M%S")
-        midi_stream.write("midi", fp=os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid"))
+    for i in range(num_to_generate):
+        while True:
+            info = music_generator.generate(["START"], ["0.0"], max_tokens=generate_len,
+                                            temperature=0.5, test_model=model)
+            midi_stream = info[-1]["midi"].chordify()
+            timestr = time.strftime("%Y%m%d-%H%M%S")
+            filename = os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid")
+            midi_stream.write("midi", fp=filename)
+            # Check the output MIDI file -- if it's less than 1 kB, it's probably empty; retry
+            if os.path.getsize(filename) < 1000:
+                os.remove(filename)
+            else:
+                break
+        print(f"Generated piece {i+1}/{num_to_generate}")
     pass
 
 
@@ -541,8 +550,8 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Combined", epochs=250)
-    # generate_composition()
+    # train_composition_model("Combined", epochs=50)
+    generate_composition(dataset="Combined", num_to_generate=3, generate_len=100)
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:
     #     # train_duration_model(voice_dataset, epochs=100)

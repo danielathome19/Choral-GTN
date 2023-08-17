@@ -143,7 +143,7 @@ class MusicGenerator(callbacks.Callback):
             duration_probs,
         )
 
-    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="treble", test_model=None):
+    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="choral", test_model=None):
         if test_model is not None:
             self.model = test_model
         attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
@@ -159,7 +159,9 @@ class MusicGenerator(callbacks.Callback):
             midi_stream.append(music21.clef.BassClef())
         elif clef == "tenor":
             midi_stream.append(music21.clef.Treble8vbClef())
-        # TODO: fix generation for 4-voice harmony; maybe add chord voicing to token and split?
+        elif clef == "choral":
+            midi_stream.append(music21.clef.TrebleClef())
+            midi_stream.append(music21.clef.BassClef())
 
         for sample_note, sample_duration in zip(start_notes, start_durations):
             new_note = get_midi_note(sample_note, sample_duration)
