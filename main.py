@@ -3,8 +3,6 @@ import sys
 import time
 import logging
 import warnings
-
-import keras.models
 import matplotlib.pyplot as plt
 from Transformer import *
 from keras import layers
@@ -543,7 +541,7 @@ if __name__ == '__main__':
     # train_tempo_model(epochs=10)
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
-    train_composition_model("Combined", epochs=100)
+    train_composition_model("Combined", epochs=250)
     # generate_composition()
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:
