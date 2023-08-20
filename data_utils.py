@@ -151,6 +151,90 @@ def create_all_datasets():
 
 
 # region VoiceTransformer
+def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, limit=None):
+    all_voices_data = {'Soprano': [], 'Alto': [], 'Tenor': [], 'Bass': []}
+
+    if limit is not None:
+        file_list = file_list[:limit]
+
+    for i, file in enumerate(file_list):
+        if verbose:
+            print(i + 1, "Parsing %s" % file)
+        score = parser.parse(file)
+        for part, voice in zip(score.parts, all_voices_data.keys()):
+            notes = ["START"]
+            durations = ["0.0"]
+            for element in part.flat:
+                note_name = None
+                duration_name = None
+                if isinstance(element, music21.tempo.MetronomeMark):
+                    note_name = str(element.number) + "BPM"
+                    duration_name = "0.0"
+                elif isinstance(element, music21.key.Key):
+                    note_name = str(element.tonic.name) + ":" + str(element.mode)
+                    duration_name = "0.0"
+                elif isinstance(element, music21.meter.TimeSignature):
+                    note_name = str(element.ratioString) + "TS"
+                    duration_name = "0.0"
+                elif isinstance(element, music21.note.Rest):
+                    note_name = voice + ":" + str(element.name)
+                    duration_name = str(element.duration.quarterLength)
+                elif isinstance(element, music21.note.Note):
+                    note_name = voice + ":" + str(element.nameWithOctave)
+                    duration_name = str(element.duration.quarterLength)
+                if note_name and duration_name:
+                    notes.append(note_name)
+                    durations.append(duration_name)
+            notes.append("END")
+            durations.append("0.0")
+            for j in range(len(notes) - seq_len):
+                all_voices_data[voice].append({
+                    'notes': " ".join(notes[j: (j + seq_len)]),
+                    'durations': " ".join(durations[j: (j + seq_len)])
+                })
+    if parsed_data_path:
+        for voice, data in all_voices_data.items():
+            with open((parsed_data_path + f"{voice}_choral_notes.pkl"), "wb") as f:
+                pkl.dump([entry['notes'] for entry in data], f)
+            with open((parsed_data_path + f"{voice}_choral_durations.pkl"), "wb") as f:
+                pkl.dump([entry['durations'] for entry in data], f)
+    return all_voices_data
+
+
+def get_choral_midi_note(sample_token, sample_duration):
+    new_note = None
+    voice_type, sample_note = sample_token.split(":")[0], ":".join(sample_token.split(":")[1:])
+    if "BPM" in sample_token:
+        new_note = music21.tempo.MetronomeMark(number=int(sample_token.split("BPM")[0]))
+    elif "TS" in sample_token:
+        new_note = music21.meter.TimeSignature(sample_token.split("TS")[0])
+    elif "major" in sample_note or "minor" in sample_note:
+        tonic, mode = sample_token.split(":")
+        new_note = music21.key.Key(tonic, mode)
+    elif sample_note == "rest":
+        new_note = music21.note.Rest()
+        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
+        new_note.storedInstrument = get_voice_instrument(voice_type)
+    elif sample_note != "START" and sample_note != "END":
+        new_note = music21.note.Note(sample_note)
+        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
+        new_note.storedInstrument = get_voice_instrument(voice_type)
+    return new_note
+
+
+def get_voice_instrument(voice_type):
+    if voice_type == "Soprano":
+        return music21.instrument.Soprano()
+    elif voice_type == "Alto":
+        return music21.instrument.Alto()
+    elif voice_type == "Tenor":
+        return music21.instrument.Tenor()
+    elif voice_type == "Bass":
+        return music21.instrument.Bass()
+    else:
+        return music21.instrument.Vocalist()
+
+
 def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, enable_chords=False, limit=None):
     notes = []
     durations = []
@@ -371,14 +455,17 @@ def augment_midi_files(path):
     pass
 
 
-def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix=""):
+def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False):
     SEQ_LEN = 50
     POLYPHONIC = True
     file_list = glob.glob(path + "/*.mid")
     parser = music21.converter
     print(f"Parsing {len(file_list)} midi files...")
-    _, _ = parse_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
-                            verbose=True, enable_chords=POLYPHONIC, limit=None)
+    if not choral:
+        _, _ = parse_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
+                                verbose=True, enable_chords=POLYPHONIC, limit=None)
+    else:
+        _ = parse_choral_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix, verbose=True, limit=None)
     print("Complete!")
 
 
@@ -452,4 +539,8 @@ if __name__ == "__main__":
     """
     # load_pickle_from_slices("Data/Glob/Combined/Combined_notes", True)
     # load_pickle_from_slices("Data/Glob/Combined/Combined_durations", True)
+    # glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_choral/Combined_", choral=True)
+    # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
+    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=5)
+    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=5)
     pass

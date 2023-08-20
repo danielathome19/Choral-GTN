@@ -104,7 +104,7 @@ class TransformerBlock(layers.Layer):
 
 class MusicGenerator(callbacks.Callback):
     def __init__(self, index_to_note, index_to_duration, top_k=10, generate_len=50,
-                 output_path="Data/Generated/Training", verbose=False):
+                 output_path="Data/Generated/Training", choral=False, verbose=False):
         super().__init__()
         self.index_to_note = index_to_note
         self.note_to_index = {note: index for index, note in enumerate(index_to_note)}
@@ -114,6 +114,7 @@ class MusicGenerator(callbacks.Callback):
         self.generate_len = generate_len
         self.output_path = output_path
         self.verbose = verbose
+        self.choral = choral
 
     @staticmethod
     def sample_from(probs, temperature):
@@ -132,7 +133,8 @@ class MusicGenerator(callbacks.Callback):
             sample_duration_idx, duration_probs = self.sample_from(durations[0][-1], temperature)
             sample_duration = self.index_to_duration[sample_duration_idx]
 
-        new_note = get_midi_note(sample_note, sample_duration)
+        new_note = get_midi_note(sample_note, sample_duration) if not self.choral else \
+                   get_choral_midi_note(sample_note, sample_duration)
         return (
             new_note,
             sample_note_idx,
@@ -152,71 +154,160 @@ class MusicGenerator(callbacks.Callback):
         sample_note = None
         sample_duration = None
         info = []
-        midi_stream = music21.stream.Stream()
-        if clef == "treble":
-            midi_stream.append(music21.clef.TrebleClef())
-        elif clef == "bass":
-            midi_stream.append(music21.clef.BassClef())
-        elif clef == "tenor":
-            midi_stream.append(music21.clef.Treble8vbClef())
-        elif clef == "choral":
-            midi_stream.append(music21.clef.TrebleClef())
-            midi_stream.append(music21.clef.BassClef())
 
-        for sample_note, sample_duration in zip(start_notes, start_durations):
-            new_note = get_midi_note(sample_note, sample_duration)
-            if new_note is not None:
-                midi_stream.append(new_note)
+        if not self.choral:
+            midi_stream = music21.stream.Stream()
+            if clef == "treble":
+                midi_stream.append(music21.clef.TrebleClef())
+            elif clef == "bass":
+                midi_stream.append(music21.clef.BassClef())
+            elif clef == "tenor":
+                midi_stream.append(music21.clef.Treble8vbClef())
+            elif clef == "choral":
+                midi_stream.append(music21.clef.TrebleClef())
+                midi_stream.append(music21.clef.BassClef())
 
-        while len(start_note_tokens) < max_tokens:
-            x1 = np.array([start_note_tokens])
-            x2 = np.array([start_duration_tokens])
-            notes, durations = self.model.predict([x1, x2], verbose=0)
+            for sample_note, sample_duration in zip(start_notes, start_durations):
+                new_note = get_midi_note(sample_note, sample_duration)
+                if new_note is not None:
+                    midi_stream.append(new_note)
 
-            repeat = True
-            while repeat:
-                (
-                    new_note,
-                    sample_note_idx,
-                    sample_note,
-                    note_probs,
-                    sample_duration_idx,
-                    sample_duration,
-                    duration_probs,
-                ) = self.get_note(notes, durations, temperature)
+            while len(start_note_tokens) < max_tokens:
+                x1 = np.array([start_note_tokens])
+                x2 = np.array([start_duration_tokens])
+                notes, durations = self.model.predict([x1, x2], verbose=0)
 
-                if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
-                    isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
-                    repeat = True
-                else:
-                    repeat = False
+                repeat = True
+                while repeat:
+                    (
+                        new_note,
+                        sample_note_idx,
+                        sample_note,
+                        note_probs,
+                        sample_duration_idx,
+                        sample_duration,
+                        duration_probs,
+                    ) = self.get_note(notes, durations, temperature)
 
-            if new_note is not None:
-                midi_stream.append(new_note)
+                    if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
+                        isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
+                        repeat = True
+                    else:
+                        repeat = False
 
-            _, att = attention_model.predict([x1, x2], verbose=0)
+                if new_note is not None:
+                    midi_stream.append(new_note)
 
-            info.append({
-                "prompt": [start_notes.copy(), start_durations.copy()],
-                "midi": midi_stream,
-                "chosen_note": (sample_note, sample_duration),
-                "note_probs": note_probs,
-                "duration_probs": duration_probs,
-                "atts": att[0, :, -1, :],
-            })
-            start_note_tokens.append(sample_note_idx)
-            start_duration_tokens.append(sample_duration_idx)
-            start_notes.append(sample_note)
-            start_durations.append(sample_duration)
+                _, att = attention_model.predict([x1, x2], verbose=0)
 
-            if sample_note == "START":
-                break
+                info.append({
+                    "prompt": [start_notes.copy(), start_durations.copy()],
+                    "midi": midi_stream,
+                    "chosen_note": (sample_note, sample_duration),
+                    "note_probs": note_probs,
+                    "duration_probs": duration_probs,
+                    "atts": att[0, :, -1, :],
+                })
+                start_note_tokens.append(sample_note_idx)
+                start_duration_tokens.append(sample_duration_idx)
+                start_notes.append(sample_note)
+                start_durations.append(sample_duration)
 
-        return info
+                if sample_note == "START":
+                    break
+
+            return info
+        else:
+            voice_streams = {
+                'Soprano': music21.stream.Part(),
+                'Alto': music21.stream.Part(),
+                'Tenor': music21.stream.Part(),
+                'Bass': music21.stream.Part()
+            }
+
+            clefs = {
+                'Soprano': music21.clef.TrebleClef(),
+                'Alto': music21.clef.TrebleClef(),
+                'Tenor': music21.clef.Treble8vbClef(),
+                'Bass': music21.clef.BassClef()
+            }
+
+            for voice, stream in voice_streams.items():
+                stream.append(clefs[voice])
+
+            for sample_token, sample_duration in zip(start_notes, start_durations):
+                voice_type = sample_token.split(":")[0]
+                new_note = get_choral_midi_note(sample_token, sample_duration)
+                if new_note is not None:
+                    if voice_type not in ["Soprano", "Alto", "Tenor", "Bass"]:
+                        voice_streams["Soprano"].append(new_note)
+                    else:
+                        voice_streams[voice_type].append(new_note)
+
+            while len(start_note_tokens) < max_tokens * 4:
+                x1 = np.array([start_note_tokens])
+                x2 = np.array([start_duration_tokens])
+                notes, durations = self.model.predict([x1, x2], verbose=0)
+
+                repeat = True
+                while repeat:
+                    (
+                        new_note,
+                        sample_note_idx,
+                        sample_note,
+                        note_probs,
+                        sample_duration_idx,
+                        sample_duration,
+                        duration_probs,
+                    ) = self.get_note(notes, durations, temperature)
+
+                    voice_type = sample_note.split(":")[0]
+
+                    if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
+                        isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
+                        repeat = True
+                    else:
+                        repeat = False
+
+                    if new_note is not None:
+                        if voice_type not in ["Soprano", "Alto", "Tenor", "Bass"]:
+                            voice_streams["Soprano"].append(new_note)
+                        else:
+                            voice_streams[voice_type].append(new_note)
+
+                _, att = attention_model.predict([x1, x2], verbose=0)
+
+                info.append({
+                    "prompt": [start_notes.copy(), start_durations.copy()],
+                    "midi": voice_streams,
+                    "chosen_note": (sample_note, sample_duration),
+                    "note_probs": note_probs,
+                    "duration_probs": duration_probs,
+                    "atts": att[0, :, -1, :],
+                })
+                start_note_tokens.append(sample_note_idx)
+                start_duration_tokens.append(sample_duration_idx)
+                start_notes.append(sample_note)
+                start_durations.append(sample_duration)
+
+                if sample_note == "START":
+                    break
+
+            midi_stream = music21.stream.Score()
+            for voice, stream in voice_streams.items():
+                midi_stream.insert(0, stream)
+
+            return info, midi_stream
 
     def on_epoch_end(self, epoch, logs=None):
-        info = self.generate(["START"], ["0.0"], max_tokens=self.generate_len, temperature=0.5)
-        midi_stream = info[-1]["midi"].chordify()
+        if not self.choral:
+            info = self.generate(["START"], ["0.0"], max_tokens=self.generate_len, temperature=0.5)
+            midi_stream = info[-1]["midi"].chordify()
+        else:
+            start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START"]
+            start_durations = ["0.0", "0.0", "0.0", "0.0"]
+            info, midi_stream = self.generate(start_notes, start_durations,
+                                              max_tokens=self.generate_len*4, temperature=0.5)
         if self.verbose:
             print(info[-1]["prompt"])
         midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch+1).zfill(4) + ".mid"))
