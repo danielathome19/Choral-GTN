@@ -151,7 +151,7 @@ def create_all_datasets():
 
 
 # region VoiceTransformer
-def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, limit=None):
+def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, limit=None, mm_limit=0):
     all_voices_data = {'Soprano': [], 'Alto': [], 'Tenor': [], 'Bass': []}
 
     if limit is not None:
@@ -164,6 +164,8 @@ def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, v
         for part, voice in zip(score.parts, all_voices_data.keys()):
             notes = ["START"]
             durations = ["0.0"]
+            if mm_limit != 0:
+                part = part.measures(0, mm_limit)
             for element in part.flat:
                 note_name = None
                 duration_name = None
@@ -300,7 +302,7 @@ def get_midi_note(sample_note, sample_duration):
     #     sign, line, octave_change = sample_note.split("CLEF")[0].split(":")
     #     new_note = music21.clef.Clef(sign=sign, line=int(line), octaveChange=int(octave_change))
     if "BPM" in sample_note:
-        new_note = music21.tempo.MetronomeMark(number=int(sample_note.split("BPM")[0]))
+        new_note = music21.tempo.MetronomeMark(number=round(float(sample_note.split("BPM")[0])))
     elif "TS" in sample_note:
         new_note = music21.meter.TimeSignature(sample_note.split("TS")[0])
     elif "major" in sample_note or "minor" in sample_note:
@@ -455,7 +457,7 @@ def augment_midi_files(path):
     pass
 
 
-def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False):
+def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False, measure_limit=0):
     SEQ_LEN = 50
     POLYPHONIC = True
     file_list = glob.glob(path + "/*.mid")
@@ -465,7 +467,8 @@ def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", chor
         _, _ = parse_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
                                 verbose=True, enable_chords=POLYPHONIC, limit=None)
     else:
-        _ = parse_choral_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix, verbose=True, limit=None)
+        _ = parse_choral_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
+                                    verbose=True, limit=None, mm_limit=measure_limit)
     print("Complete!")
 
 
@@ -543,4 +546,11 @@ if __name__ == "__main__":
     # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=5)
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=5)
+
+    glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_mm1-8/Combined_", choral=True, measure_limit=8)
+    for i in range(1, 5):
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_1", "Data/Glob/Combined_mm1-8/Combined_aug1_", "", True, 8)
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_2", "Data/Glob/Combined_mm1-8/Combined_aug2_", "", True, 8)
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_mm1-8/Combined_aug3_", "", True, 8)
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_mm1-8/Combined_aug4_", "", True, 8)
     pass
