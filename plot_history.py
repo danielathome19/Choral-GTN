@@ -36,5 +36,5 @@ if __name__ == "__main__":
                  ha="center", va="bottom", fontsize=8)
     plt.legend()
     plt.show()
-    plt.savefig(os.path.join(os.getcwd(), "Images/composition_combined_model_history.png"))
+    # plt.savefig(os.path.join(os.getcwd(), "Images/tenor_intro_model_history.png"))
     pass

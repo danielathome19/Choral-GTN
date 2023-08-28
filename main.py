@@ -42,6 +42,8 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 
 def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, choral=False, temperature=0.5):
+    # TODO: add another function to generate intro (first 8 measures) of a voice part given a key and time signature;
+    # maybe train model to predict the number of beats before each voice starts? RNG? maybe find min/max range in MIDIs?
     with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "rb") as f:
         notes_vocab = pkl.load(f)
     with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
@@ -96,7 +98,7 @@ def train_intro_model(dataset="Soprano", epochs=100):
     INCLUDE_AUGMENTED = True
     BATCH_SIZE = 128
     DATASET_REPETITIONS = 1
-    LOAD_MODEL = False
+    LOAD_MODEL = True
     GENERATE_LEN = 50
 
     # Load the parsed data
@@ -163,7 +165,8 @@ def train_intro_model(dataset="Soprano", epochs=100):
     model.save(f"Weights/Composition_Intro/{dataset}.keras")
 
     # Test the model
-    info, midi_stream = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
+    info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
+    midi_stream = info[-1]["midi"]
     timestr = time.strftime("%Y%m%d-%H%M%S")
     midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Intro_{dataset}", "output-" + timestr + ".mid"))
 
@@ -733,7 +736,7 @@ if __name__ == '__main__':
     # train_key_model(epochs=10)
     # train_composition_model("Soprano", epochs=50)
     # train_choral_composition_model(epochs=9)
-    train_intro_model(dataset="Soprano", epochs=122)
+    train_intro_model(dataset="Tenor", epochs=114)
     # generate_composition("Combined_choral", num_to_generate=3, generate_len=30, choral=True, temperature=0.5)
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:

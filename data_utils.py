@@ -304,6 +304,8 @@ def get_midi_note(sample_note, sample_duration):
     if "BPM" in sample_note:
         new_note = music21.tempo.MetronomeMark(number=round(float(sample_note.split("BPM")[0])))
     elif "TS" in sample_note:
+        if sample_note.split("TS")[0].split("/")[0] == "4":
+            sample_note = "12/" + sample_note.split("/")[1]  # TODO: replace with random valid time signature count
         new_note = music21.meter.TimeSignature(sample_note.split("TS")[0])
     elif "major" in sample_note or "minor" in sample_note:
         tonic, mode = sample_note.split(":")
