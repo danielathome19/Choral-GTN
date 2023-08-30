@@ -75,6 +75,30 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
     pass
 
 
+def generate_intro(dataset="Soprano", generate_len=50, temperature=0.5, key=None, time_sig=None):
+    with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "rb") as f:
+        notes_vocab = pkl.load(f)
+    with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
+        durations_vocab = pkl.load(f)
+    model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
+    model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
+    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len, choral=False)
+    # while True:
+    info = music_generator.generate(["START"], ["0.0"], max_tokens=generate_len,
+                                    temperature=temperature, test_model=model)
+    midi_stream = info[-1]["midi"].chordify()
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    filename = os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid")
+    midi_stream.write("midi", fp=filename)
+    # # Check the output MIDI file -- if it's less than 100 bytes, it's probably empty; retry
+    # if os.path.getsize(filename) < 1000:
+    #     os.remove(filename)
+    #     print("Failed to generate piece; retrying...")
+    # else:
+    #     break
+    pass
+
+
 def build_model(notes_vocab_size, durations_vocab_size,
                 embedding_dim=256, feed_forward_dim=256, num_heads=5, key_dim=256, dropout_rate=0.3):
     note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
@@ -736,7 +760,7 @@ if __name__ == '__main__':
     # train_key_model(epochs=10)
     # train_composition_model("Soprano", epochs=50)
     # train_choral_composition_model(epochs=9)
-    train_intro_model(dataset="Tenor", epochs=114)
+    train_intro_model(dataset="Tenor", epochs=81)
     # generate_composition("Combined_choral", num_to_generate=3, generate_len=30, choral=True, temperature=0.5)
     # voices_datasets = ["Soprano", "Bass", "Alto", "Tenor"]
     # for voice_dataset in voices_datasets:

@@ -334,6 +334,48 @@ def get_midi_note(sample_note, sample_duration):
     return new_note
 
 
+def meta_analysis(dataset="Soprano"):
+    """Analyzes all MIDIs in the dataset to find the following:
+    - Average duration (in seconds) before the first note (initial entrance)
+    - Probability distribution of time signature counts
+    - Probability distribution of time signature beats
+    - Probability distribution of key signatures
+    - Min, max, and average tempo
+    """
+    path = os.path.join(os.getcwd(), f"Data/MIDI/VoiceParts/{dataset}/Isolated")
+    files = sorted([f for f in os.listdir(path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+    first_note_entrances = []
+    time_signature_counts = []
+    time_signature_beats = []
+    key_signatures = []
+    tempi = []
+    for index, file in enumerate(files):
+        try:
+            print(f"Analyzing file {index + 1}/{len(files)}")
+            score = music21.converter.parse(os.path.join(path, file))
+            first_note_entrances.append(score.parts[0].flat.notes[0].offset)
+            for element in score.flat:
+                if isinstance(element, music21.tempo.MetronomeMark):
+                    tempi.append(element.number)
+                elif isinstance(element, music21.key.Key):
+                    key_signatures.append(element.tonic.name + ":" + element.mode)
+                elif isinstance(element, music21.meter.TimeSignature):
+                    time_signature_counts.append(element.numerator)
+                    time_signature_beats.append(element.denominator)
+        except Exception as e:
+            print(f"\tError parsing file {file}: {e}")
+    results = {
+        "first_entrance": np.mean(first_note_entrances),
+        "time_signature_counts": np.unique(time_signature_counts, return_counts=True),
+        "time_signature_beats": np.unique(time_signature_beats, return_counts=True),
+        "key_signatures": np.unique(key_signatures, return_counts=True),
+        "tempi": {"min": np.min(tempi), "max": np.max(tempi), "mean": np.mean(tempi)}
+    }
+    with open(os.path.join(os.getcwd(), f"Weights/VoiceMetadata/{dataset}_meta_analysis.pkl"), "wb") as f:
+        pkl.dump(results, f)
+    print(results)
+
+
 def create_transformer_dataset(elements, batch_size=256):
     ds = (tf.data.Dataset.from_tensor_slices(elements).batch(batch_size, drop_remainder=True).shuffle(1000))
     vectorize_layer = layers.TextVectorization(standardize=None, output_mode="int")
@@ -548,11 +590,14 @@ if __name__ == "__main__":
     # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=5)
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=5)
-
+    """
     glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_mm1-8/Combined_", choral=True, measure_limit=8)
     for i in range(1, 5):
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_1", "Data/Glob/Combined_mm1-8/Combined_aug1_", "", True, 8)
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_2", "Data/Glob/Combined_mm1-8/Combined_aug2_", "", True, 8)
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_mm1-8/Combined_aug3_", "", True, 8)
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_mm1-8/Combined_aug4_", "", True, 8)
+    """
+    for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
+        meta_analysis(voice)
     pass

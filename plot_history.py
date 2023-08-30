@@ -35,6 +35,6 @@ if __name__ == "__main__":
         plt.text(i, duration_outputs_loss[i]-offset, "{:.2f}".format(duration_outputs_loss[i]),
                  ha="center", va="bottom", fontsize=8)
     plt.legend()
+    plt.savefig(os.path.join(os.getcwd(), "Images/tenor_intro_model_history.png"))
     plt.show()
-    # plt.savefig(os.path.join(os.getcwd(), "Images/tenor_intro_model_history.png"))
     pass
