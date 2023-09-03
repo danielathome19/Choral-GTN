@@ -274,7 +274,7 @@ class MusicGenerator(callbacks.Callback):
                         sample_duration_idx,
                         sample_duration,
                         duration_probs,
-                    ) = self.get_choral_midi_note(notes, durations, temperature)
+                    ) = self.get_note(notes, durations, temperature)
 
                     voice_type = sample_note.split(":")[0]
 
