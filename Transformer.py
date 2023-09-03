@@ -122,7 +122,7 @@ class MusicGenerator(callbacks.Callback):
         probs = probs / np.sum(probs)
         return np.random.choice(len(probs), p=probs), probs
 
-    def get_note(self, notes, durations, temperature):
+    def get_note(self, notes, durations, temperature, instrument=None):
         sample_note_idx = 1
         while sample_note_idx == 1:
             sample_note_idx, note_probs = self.sample_from(notes[0][-1], temperature)
@@ -133,7 +133,7 @@ class MusicGenerator(callbacks.Callback):
             sample_duration_idx, duration_probs = self.sample_from(durations[0][-1], temperature)
             sample_duration = self.index_to_duration[sample_duration_idx]
 
-        new_note = get_midi_note(sample_note, sample_duration) if not self.choral else \
+        new_note = get_midi_note(sample_note, sample_duration, instrument) if not self.choral else \
                    get_choral_midi_note(sample_note, sample_duration)
         return (
             new_note,
@@ -145,9 +145,10 @@ class MusicGenerator(callbacks.Callback):
             duration_probs,
         )
 
-    def generate(self, start_notes, start_durations, max_tokens, temperature, clef="choral", test_model=None):
-        if test_model is not None:
-            self.model = test_model
+    def generate(self, start_notes, start_durations, max_tokens, temperature,
+                 clef="choral", model=None, intro=False, instrument=None):
+        if model is not None:
+            self.model = model
         attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
         start_note_tokens = [self.note_to_index.get(x, 1) for x in start_notes]
         start_duration_tokens = [self.duration_to_index.get(x, 1) for x in start_durations]
@@ -168,9 +169,19 @@ class MusicGenerator(callbacks.Callback):
                 midi_stream.append(music21.clef.BassClef())
 
             for sample_note, sample_duration in zip(start_notes, start_durations):
-                new_note = get_midi_note(sample_note, sample_duration)
+                new_note = get_midi_note(sample_note, sample_duration, instrument)
                 if new_note is not None:
                     midi_stream.append(new_note)
+
+            if intro:
+                info.append({
+                    "prompt": [start_notes.copy(), start_durations.copy()],
+                    "midi": midi_stream,
+                    "chosen_note": (sample_note, sample_duration),
+                    "note_probs": 1,
+                    "duration_probs": 1,
+                    "atts": [],
+                })
 
             while len(start_note_tokens) < max_tokens:
                 x1 = np.array([start_note_tokens])
@@ -187,10 +198,14 @@ class MusicGenerator(callbacks.Callback):
                         sample_duration_idx,
                         sample_duration,
                         duration_probs,
-                    ) = self.get_note(notes, durations, temperature)
+                    ) = self.get_note(notes, durations, temperature, instrument)
 
                     if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
                         isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
+                        repeat = True
+                    elif intro and (isinstance(new_note, music21.tempo.MetronomeMark) or
+                                    isinstance(new_note, music21.key.Key) or
+                                    isinstance(new_note, music21.meter.TimeSignature)):
                         repeat = True
                     else:
                         repeat = False
@@ -259,7 +274,7 @@ class MusicGenerator(callbacks.Callback):
                         sample_duration_idx,
                         sample_duration,
                         duration_probs,
-                    ) = self.get_note(notes, durations, temperature)
+                    ) = self.get_choral_midi_note(notes, durations, temperature)
 
                     voice_type = sample_note.split(":")[0]
 

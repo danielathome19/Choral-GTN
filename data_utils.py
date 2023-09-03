@@ -296,16 +296,19 @@ def parse_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=
     return notes_list, duration_list
 
 
-def get_midi_note(sample_note, sample_duration):
+def get_midi_note(sample_note, sample_duration, instrument=None):
     new_note = None
     # if "CLEF" in sample_note:
     #     sign, line, octave_change = sample_note.split("CLEF")[0].split(":")
     #     new_note = music21.clef.Clef(sign=sign, line=int(line), octaveChange=int(octave_change))
+    instruments = {"Soprano": music21.instrument.Soprano(), "Alto": music21.instrument.Alto(),
+                   "Tenor": music21.instrument.Tenor(), "Bass": music21.instrument.Bass()}
+    instrument = instruments[instrument] if instrument else music21.instrument.Vocalist()
     if "BPM" in sample_note:
         new_note = music21.tempo.MetronomeMark(number=round(float(sample_note.split("BPM")[0])))
     elif "TS" in sample_note:
-        if sample_note.split("TS")[0].split("/")[0] == "4":
-            sample_note = "12/" + sample_note.split("/")[1]  # TODO: replace with random valid time signature count
+        if int(sample_note.split("TS")[0].split("/")[0]) > 16:
+            sample_note = "12/" + sample_note.split("/")[1]
         new_note = music21.meter.TimeSignature(sample_note.split("TS")[0])
     elif "major" in sample_note or "minor" in sample_note:
         tonic, mode = sample_note.split(":")
@@ -313,24 +316,24 @@ def get_midi_note(sample_note, sample_duration):
     elif sample_note == "rest":
         new_note = music21.note.Rest()
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Vocalist()
+        new_note.storedInstrument = instrument
     elif "." in sample_note:
         notes_in_chord = sample_note.split(".")
         chord_notes = []
         for current_note in notes_in_chord:
             n = music21.note.Note(current_note)
             n.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-            n.storedInstrument = music21.instrument.Vocalist()
+            n.storedInstrument = instrument
             chord_notes.append(n)
         new_note = music21.chord.Chord(chord_notes)
     elif sample_note == "rest":
         new_note = music21.note.Rest()
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Vocalist()
+        new_note.storedInstrument = instrument
     elif sample_note != "START":
         new_note = music21.note.Note(sample_note)
         new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = music21.instrument.Vocalist()
+        new_note.storedInstrument = instrument
     return new_note
 
 
@@ -374,6 +377,34 @@ def meta_analysis(dataset="Soprano"):
     with open(os.path.join(os.getcwd(), f"Weights/VoiceMetadata/{dataset}_meta_analysis.pkl"), "wb") as f:
         pkl.dump(results, f)
     print(results)
+
+
+def view_meta_analysis(dataset="Soprano"):
+    with open(f"Weights/VoiceMetadata/{dataset}_meta_analysis.pkl", "rb") as f:
+        results = pkl.load(f)
+    print(results)
+
+
+def combine_intros():
+    path = os.path.join(os.getcwd(), "Data/Generated/")
+    latest_files = []
+    voices = ["Soprano", "Alto", "Tenor", "Bass"]
+    for voice in voices:
+        c_path = os.path.join(path, f"Intro_{voice}/")
+        files = sorted([f for f in os.listdir(c_path) if f.lower().endswith('.mid') and f != 'desktop.ini'])
+        latest_files.append(os.path.join(path, f"Intro_{voice}/{files[-1]}"))
+    print(f"Combining files: {['/'.join(f.split('/')[-2:]) for f in latest_files]}")
+    new_midi = mido.MidiFile()
+    for i, file in enumerate(latest_files):
+        midi = mido.MidiFile(file)
+        if i == 0:
+            new_midi.ticks_per_beat = midi.ticks_per_beat
+            new_midi.tracks.append(midi.tracks[0])
+        for j, track in enumerate(midi.tracks):
+            if j != 0:
+                track.name = voices[i]
+                new_midi.tracks.append(track)
+    new_midi.save(os.path.join(path, "Intro_All/" + latest_files[0].split("/")[-1]))
 
 
 def create_transformer_dataset(elements, batch_size=256):
@@ -598,6 +629,8 @@ if __name__ == "__main__":
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_mm1-8/Combined_aug3_", "", True, 8)
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_mm1-8/Combined_aug4_", "", True, 8)
     """
-    for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
-        meta_analysis(voice)
+    # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
+    #     meta_analysis(voice)
+    # view_meta_analysis("Soprano")
+    combine_intros()
     pass
