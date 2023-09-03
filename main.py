@@ -53,13 +53,13 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
         while True:
             if not choral:
                 info = music_generator.generate(["START"], ["0.0"], max_tokens=generate_len,
-                                                temperature=temperature, test_model=model)
+                                                temperature=temperature, model=model)
                 midi_stream = info[-1]["midi"].chordify()
             else:
                 start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START"]
                 start_durations = ["0.0", "0.0", "0.0", "0.0"]
                 info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=generate_len,
-                                                             temperature=temperature, test_model=model)
+                                                             temperature=temperature, model=model)
             timestr = time.strftime("%Y%m%d-%H%M%S")
             filename = os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid")
             midi_stream.write("midi", fp=filename)
@@ -816,15 +816,15 @@ if __name__ == '__main__':
     # train_choral_composition_model(epochs=9)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    # generate_composition("Combined_choral", num_to_generate=3, generate_len=30, choral=True, temperature=0.5)
-    key, time_sig, tempo = None, None, None
-    for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
-        temp = 0.9
-        g_len = 30
-        if voice_dataset == "Soprano":
-            key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp)
-        else:
-            generate_intro(voice_dataset, generate_len=g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
+    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.5)
+    # key, time_sig, tempo = None, None, None
+    # for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
+    #     temp = 0.9
+    #     g_len = 30
+    #     if voice_dataset == "Soprano":
+    #         key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp)
+    #     else:
+    #         generate_intro(voice_dataset, generate_len=g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
     #     # train_duration_model(voice_dataset, epochs=100)
     #     # train_composition_model(voice_dataset, epochs=100)
     #     pass
