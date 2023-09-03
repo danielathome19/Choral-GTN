@@ -816,15 +816,15 @@ if __name__ == '__main__':
     # train_choral_composition_model(epochs=9)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.5)
-    # key, time_sig, tempo = None, None, None
-    # for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
-    #     temp = 0.9
-    #     g_len = 30
-    #     if voice_dataset == "Soprano":
-    #         key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp)
-    #     else:
-    #         generate_intro(voice_dataset, generate_len=g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
+    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.5)
+    key, time_sig, tempo = None, None, None
+    for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
+        temp = 0.9
+        g_len = 30
+        if voice_dataset == "Soprano":
+            key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp)
+        else:
+            generate_intro(voice_dataset, generate_len=g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
     #     # train_duration_model(voice_dataset, epochs=100)
     #     # train_composition_model(voice_dataset, epochs=100)
     #     pass
