@@ -2,6 +2,7 @@ import ast
 import gc
 import sys
 import time
+import random
 import logging
 import warnings
 import matplotlib.pyplot as plt
@@ -41,14 +42,17 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
         plt.savefig(filename)
 
 
-def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, choral=False, temperature=0.5):
+def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, choral=False,
+                         temperature=0.5, key=None, time_sig=None, tempo: int = None):
     with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "rb") as f:
         notes_vocab = pkl.load(f)
     with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
         durations_vocab = pkl.load(f)
+
     model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
     model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len, choral=choral)
+    provided_metadata = not (key is None and time_sig is None and tempo is None)
     for i in range(num_to_generate):
         while True:
             if not choral:
@@ -56,19 +60,34 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
                                                 temperature=temperature, model=model)
                 midi_stream = info[-1]["midi"].chordify()
             else:
-                start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START"]
-                start_durations = ["0.0", "0.0", "0.0", "0.0"]
+                entrances = []
+                for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
+                    t_key, t_time_sig, t_tempo, entrance = validate_and_generate_metatrack(voice, key, time_sig, tempo)
+                    entrances.append(entrance)
+                    if voice == "Soprano":
+                        key = t_key if key is None else key
+                        time_sig = t_time_sig if time_sig is None else time_sig
+                        tempo = t_tempo if tempo is None else tempo
+                entrances[np.argmin(entrances)] = 0
+                print(f"Generating choral piece with key={key}, time_sig={time_sig}, "
+                      f"tempo={tempo}, entrances={entrances}...")
+                start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START", key, time_sig, tempo,
+                               "Soprano:rest", "Alto:rest", "Tenor:rest", "Bass:rest"]
+                start_durations = ["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"] + \
+                                  [str(entrance) for entrance in entrances]
                 info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=generate_len,
-                                                             temperature=temperature, model=model)
+                                                             temperature=temperature, model=model, intro=True)
             timestr = time.strftime("%Y%m%d-%H%M%S")
             filename = os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid")
             midi_stream.write("midi", fp=filename)
-            # Check the output MIDI file -- if it's less than 1 kB, it's probably empty; retry
-            if os.path.getsize(filename) < 1000:
+            # Check the output MIDI file -- if it's less than 0.25 kB, it's probably empty; retry
+            if os.path.getsize(filename) < 250:
                 os.remove(filename)
                 print("Failed to generate piece; retrying...")
             else:
                 break
+        if not provided_metadata:
+            key, time_sig, tempo = None, None, None
         print(f"Generated piece {i+1}/{num_to_generate}")
     pass
 
@@ -79,71 +98,31 @@ def generate_intro(dataset="Soprano", generate_len=50, temperature=0.5, key=None
         notes_vocab = pkl.load(f)
     with open(f"Weights/Composition_Intro/{dataset}_durations_vocab.pkl", "rb") as f:
         durations_vocab = pkl.load(f)
-    with open(f"Weights/VoiceMetadata/{dataset}_meta_analysis.pkl", "rb") as f:
-        metadata = pkl.load(f)
 
-    if key is None:
-        # Choose a random key signature from the "key_signatures" list in the metadata using the
-        # probabilities from the counts (i.e., the more common keys are more likely to be chosen)
-        all_keys = ['C:major', 'G:major', 'D:major', 'A:major', 'E:major', 'B:major', 'F#:major', 'C#:major',
-                    'F:major', 'B-:major', 'E-:major', 'A-:major', 'D-:major', 'G-:major', 'C-:major',
-                    'A:minor', 'E:minor', 'B:minor', 'F#:minor', 'C#:minor', 'G#:minor',
-                    'D:minor', 'G:minor', 'C:minor', 'F:minor', 'B-:minor', 'E-:minor']
-        key_signatures = metadata["key_signatures"][0]
-        key_probs = metadata["key_signatures"][1]
-        for c_key in all_keys:
-            if c_key not in key_signatures:
-                key_signatures = np.append(key_signatures, c_key)
-                key_probs = np.append(key_probs, 1)
-        key = np.random.choice(key_signatures, p=key_probs / np.sum(key_probs))
-
-    if time_sig is None:
-        # Use time_signature_counts and time_signature_beats from metadata to choose a random (probable) time signature
-        time_sigs = metadata["time_signature_counts"][0]
-        time_sig_probs = metadata["time_signature_counts"][1]
-        time_sig_beats = metadata["time_signature_beats"][0]
-        time_sig_beats_probs = metadata["time_signature_beats"][1]
-        time_sig_count = np.random.choice(time_sigs, p=time_sig_probs / np.sum(time_sig_probs))
-        time_sig_beats = np.random.choice(time_sig_beats, p=time_sig_beats_probs / np.sum(time_sig_beats_probs))
-        time_sig = f"{time_sig_count}/{time_sig_beats}TS"
-
-    if tempo is None:
-        # Pick a random tempo based on the min, max, and mean tempos from
-        # the metadata (with a weighted probability closer to the mean)
-        tempo_min = metadata["tempi"]['min']
-        tempo_max = metadata["tempi"]['max']
-        tempo_mean = metadata["tempi"]['mean']
-        tempo_min = tempo_min if tempo_min >= 30 else 30 + tempo_min
-        tempo_max = tempo_max if tempo_max <= 180 else 180
-        tempo_probs = np.array([1 / (tempo_mean - tempo_min), 1 / (tempo_max - tempo_mean)])
-        tempo_probs = tempo_probs / np.sum(tempo_probs)
-        tempo = f"{int(np.random.choice([tempo_min, tempo_max], p=tempo_probs))}BPM"
-
-    if entrance is None:
-        # Pick a random entrance between 0 and 1.5*first_entrance in the metadata
-        first_entrance = metadata["first_entrance"]
-        entrance = np.random.uniform(0, 1.5 * first_entrance)
-
+    key, time_sig, tempo, entrance = validate_and_generate_metatrack(dataset, key, time_sig, tempo, entrance)
     start_tokens = [f"START", key, time_sig, tempo, "rest"]
     start_durations = ["0.0", "0.0", "0.0", "0.0", str(entrance)]
-    print(f"Generating intro with key={key}, time_sig={time_sig}, tempo={tempo}, entrance={entrance}...")
-
-    model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8, verbose=False)
-    model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
-    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
+    print(f"Generating {dataset} intro with key={key}, time_sig={time_sig}, tempo={tempo}, entrance={entrance}...")
     while True:
         try:
+            model = build_model(len(notes_vocab), len(durations_vocab),
+                                feed_forward_dim=512, num_heads=8, verbose=False)
+            model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
+            music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
             clef = "treble" if dataset in ["Soprano", "Alto"] else dataset.lower()
             info = music_generator.generate(start_tokens, start_durations, max_tokens=generate_len, clef=clef,
                                             temperature=temperature, model=model, intro=True, instrument=dataset)
             midi_stream = info[-1]["midi"]
             timestr = time.strftime("%Y%m%d-%H%M%S")
-            filename = os.path.join(f"Data/Generated/Intro_{dataset}", "output-" + timestr + ".mid")
+            output_dir = f"Data/Generated/Intro_{dataset}"
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
+            filename = os.path.join(output_dir, "output-" + timestr + ".mid")
             midi_stream.write("midi", fp=filename)
             # Check the output MIDI file -- if it's less than 250 bytes, it's probably junk; retry
             if os.path.getsize(filename) < 250:
                 os.remove(filename)
-                print("Failed to generate piece; retrying...")
+                # print(f"Failed to generate intro for {dataset}; retrying...")
             else:
                 break
         except Exception as e:
@@ -816,15 +795,17 @@ if __name__ == '__main__':
     # train_choral_composition_model(epochs=9)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.5)
-    key, time_sig, tempo = None, None, None
-    for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
-        temp = 0.9
-        g_len = 30
-        if voice_dataset == "Soprano":
-            key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp)
-        else:
-            generate_intro(voice_dataset, generate_len=g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
+    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    # key, time_sig, tempo = None, None, None
+    # key, time_sig, tempo = "D-:major", "3/4TS", 120
+    # for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
+    #     temp = 0.6
+    #     g_len = 30
+    #     if voice_dataset == "Soprano":
+    #         key, time_sig, tempo, _, _ = generate_intro(voice_dataset, generate_len=g_len, temperature=temp,
+    #                                                     key=key, time_sig=time_sig, tempo=tempo)
+    #     else:
+    #         generate_intro(voice_dataset, g_len, temperature=temp, key=key, time_sig=time_sig, tempo=tempo)
     #     # train_duration_model(voice_dataset, epochs=100)
     #     # train_composition_model(voice_dataset, epochs=100)
     #     pass

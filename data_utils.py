@@ -1,6 +1,7 @@
 import os
 import glob
 import mido
+import random
 import music21
 import pretty_midi
 import numpy as np
@@ -407,6 +408,61 @@ def combine_intros():
     new_midi.save(os.path.join(path, "Intro_All/" + latest_files[0].split("/")[-1]))
 
 
+def validate_and_generate_metatrack(dataset="Soprano", key=None, time_sig=None, tempo=None, entrance=None):
+    with open(f"Weights/VoiceMetadata/{dataset}_meta_analysis.pkl", "rb") as f:
+        metadata = pkl.load(f)
+
+    if key is None:
+        # Choose a random key signature from the "key_signatures" list in the metadata using the
+        # probabilities from the counts (i.e., the more common keys are more likely to be chosen)
+        all_keys = ['C:major', 'G:major', 'D:major', 'A:major', 'E:major', 'B:major', 'F#:major', 'C#:major',
+                    'F:major', 'B-:major', 'E-:major', 'A-:major', 'D-:major', 'G-:major', 'C-:major',
+                    'A:minor', 'E:minor', 'B:minor', 'F#:minor', 'C#:minor', 'G#:minor',
+                    'D:minor', 'G:minor', 'C:minor', 'F:minor', 'B-:minor', 'E-:minor']
+        key_signatures = metadata["key_signatures"][0]
+        key_probs = metadata["key_signatures"][1]
+        for c_key in all_keys:
+            if c_key not in key_signatures:
+                key_signatures = np.append(key_signatures, c_key)
+                key_probs = np.append(key_probs, 1)
+        key = np.random.choice(key_signatures, p=key_probs / np.sum(key_probs))
+
+    if time_sig is None:
+        # Use time_signature_counts and time_signature_beats from metadata to choose a random (probable) time signature
+        time_sigs = metadata["time_signature_counts"][0]
+        time_sig_probs = metadata["time_signature_counts"][1]
+        time_sig_beats = metadata["time_signature_beats"][0]
+        time_sig_beats_probs = metadata["time_signature_beats"][1]
+        time_sig_count = np.random.choice(time_sigs, p=time_sig_probs / np.sum(time_sig_probs))
+        time_sig_beats = np.random.choice(time_sig_beats, p=time_sig_beats_probs / np.sum(time_sig_beats_probs))
+        time_sig = f"{time_sig_count}/{time_sig_beats}TS"
+    else:
+        if "TS" not in time_sig:
+            time_sig = f"{time_sig}TS"
+
+    if tempo is None:
+        # Pick a random tempo based on the min, max, and mean tempos from
+        # the metadata (with a weighted probability closer to the mean)
+        tempo_min = metadata["tempi"]['min']
+        tempo_max = metadata["tempi"]['max']
+        tempo_mean = metadata["tempi"]['mean']
+        tempo_min = tempo_min if tempo_min >= 45 else 45 + random.randint(0, int(tempo_mean)//2)
+        tempo_max = tempo_max if tempo_max <= 180 else 180 - random.randint(0, int(tempo_mean)//2)
+        tempo_probs = np.array([1 / (tempo_mean - tempo_min), 1 / (tempo_max - tempo_mean)])
+        tempo_probs = tempo_probs / np.sum(tempo_probs)
+        tempo = f"{int(np.random.choice([tempo_min, tempo_max], p=tempo_probs))}BPM"
+    else:
+        tempo = f"{tempo}BPM"
+
+    if entrance is None:
+        # Pick a random entrance between 0 and 1.5*first_entrance in the metadata
+        first_entrance = metadata["first_entrance"]
+        entrance = np.random.uniform(0, 1.5 * first_entrance)
+        entrance = round(entrance * 4) / 4  # Round to nearest 0.25
+
+    return key, time_sig, tempo, entrance
+
+
 def create_transformer_dataset(elements, batch_size=256):
     ds = (tf.data.Dataset.from_tensor_slices(elements).batch(batch_size, drop_remainder=True).shuffle(1000))
     vectorize_layer = layers.TextVectorization(standardize=None, output_mode="int")
@@ -631,6 +687,6 @@ if __name__ == "__main__":
     """
     # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
     #     meta_analysis(voice)
-    # view_meta_analysis("Soprano")
-    combine_intros()
+    view_meta_analysis("Soprano")
+    # combine_intros()
     pass

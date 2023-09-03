@@ -158,6 +158,7 @@ class MusicGenerator(callbacks.Callback):
 
         if not self.choral:
             midi_stream = music21.stream.Stream()
+
             if clef == "treble":
                 midi_stream.append(music21.clef.TrebleClef())
             elif clef == "bass":
@@ -167,6 +168,11 @@ class MusicGenerator(callbacks.Callback):
             elif clef == "choral":
                 midi_stream.append(music21.clef.TrebleClef())
                 midi_stream.append(music21.clef.BassClef())
+
+            if instrument is not None:
+                instruments = {"Soprano": music21.instrument.Soprano(), "Alto": music21.instrument.Alto(),
+                               "Tenor": music21.instrument.Tenor(), "Bass": music21.instrument.Bass()}
+                midi_stream.append(instruments[instrument])
 
             for sample_note, sample_duration in zip(start_notes, start_durations):
                 new_note = get_midi_note(sample_note, sample_duration, instrument)
@@ -203,10 +209,12 @@ class MusicGenerator(callbacks.Callback):
                     if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
                         isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
                         repeat = True
+                        continue
                     elif intro and (isinstance(new_note, music21.tempo.MetronomeMark) or
                                     isinstance(new_note, music21.key.Key) or
                                     isinstance(new_note, music21.meter.TimeSignature)):
                         repeat = True
+                        continue
                     else:
                         repeat = False
 
@@ -259,6 +267,16 @@ class MusicGenerator(callbacks.Callback):
                     else:
                         voice_streams[voice_type].append(new_note)
 
+            if intro:
+                info.append({
+                    "prompt": [start_notes.copy(), start_durations.copy()],
+                    "midi": voice_streams,
+                    "chosen_note": (sample_note, sample_duration),
+                    "note_probs": 1,
+                    "duration_probs": 1,
+                    "atts": [],
+                })
+
             while len(start_note_tokens) < max_tokens * 4:
                 x1 = np.array([start_note_tokens])
                 x2 = np.array([start_duration_tokens])
@@ -281,6 +299,12 @@ class MusicGenerator(callbacks.Callback):
                     if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
                         isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
                         repeat = True
+                        continue
+                    elif intro and (isinstance(new_note, music21.tempo.MetronomeMark) or
+                                    isinstance(new_note, music21.key.Key) or
+                                    isinstance(new_note, music21.meter.TimeSignature)):
+                        repeat = True
+                        continue
                     else:
                         repeat = False
 
