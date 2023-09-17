@@ -1,6 +1,6 @@
-import ast
 import gc
 import sys
+import ast
 import time
 import random
 import logging
