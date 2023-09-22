@@ -98,6 +98,19 @@ def train_bpe_composition_model(epochs=100):
     """
     # Create Transformer using the above configuration
 
+    MAX_POS_LEN = 4096
+    PI_LEVEL = 2
+    IGNORE_META_LOSS = 1
+    RATIO = 4
+    BPE = "_bpe"  # or ""
+
+    DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
+    CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{PI_LEVEL}"
+    DATA_BIN_DIR = f"Data/Glob/Preprocessed/model_spec/{DATA_BIN}/bin/"
+    DATA_VOC_DIR = f"Data/Glob/Preprocessed/model_spec/{DATA_BIN}/vocabs/"
+    from musicbpe_preprocesing import process_prime_midi, gen_one, get_trk_ins_map, \
+                                      get_note_seq, note_seq_to_midi_file, music_dict
+    music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
     pass
 
 
