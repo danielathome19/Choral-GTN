@@ -31,32 +31,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 def train_bpe_composition_model(epochs=100):
-    """ Trains a MusicBPE Transformer model to generate compositions. """
-    """
-    #!/bin/bash
-    #
-    while read line;do
-        eval "$line"
-    done < config.sh
-    
-    while read line;do
-        eval "$line"
-    done < vocab.sh
-    
-    # for model training
-    if [ $BPE -eq 0 ]; then
-    DATA_BIN=linear_${MAX_POS_LEN}_chord_hardloss${IGNORE_META_LOSS}
-    else
-    DATA_BIN=linear_${MAX_POS_LEN}_chord_bpe_hardloss${IGNORE_META_LOSS}
-    fi
-    DATA_BIN_DIR=data/model_spec/${DATA_BIN}/bin
-    
-    
-    N_GPU_LOCAL=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-    UPDATE_FREQ=$((${BATCH_SIZE} / ${MAX_SENTENCES} / ${N_GPU_LOCAL}))
-    NN_ARCH=linear_transformer_multi
-    CHECKPOINT_SUFFIX=${DATA_BIN}_PI${PI_LEVEL}
-    """
+    """Trains a MusicBPE Transformer model to generate compositions."""
     config = {}
     with open("config.sh", "r") as f:
         for line in f:
@@ -64,18 +39,11 @@ def train_bpe_composition_model(epochs=100):
             config[name] = value
 
     # 2. Setting Data Directory
-    if config['BPE'] == '0':
-        DATA_BIN = f"linear_{config['MAX_POS_LEN']}_chord_hardloss{config['IGNORE_META_LOSS']}"
-    else:
-        DATA_BIN = f"linear_{config['MAX_POS_LEN']}_chord_bpe_hardloss{config['IGNORE_META_LOSS']}"
-
-    DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin"
-
     # 3. Compute Settings
-    N_GPU_LOCAL = len(tf.config.experimental.list_physical_devices('GPU'))
-    UPDATE_FREQ = int(config['BATCH_SIZE']) / int(config['MAX_SENTENCES']) / N_GPU_LOCAL
-    NN_ARCH = "linear_transformer_multi"
-    CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{config['PI_LEVEL']}"
+    # N_GPU_LOCAL = len(tf.config.experimental.list_physical_devices('GPU'))
+    # UPDATE_FREQ = int(config['BATCH_SIZE']) / int(config['MAX_SENTENCES']) / N_GPU_LOCAL
+    # NN_ARCH = "linear_transformer_multi"
+    # CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{config['PI_LEVEL']}"
 
     # 4. Training
     """
@@ -99,18 +67,65 @@ def train_bpe_composition_model(epochs=100):
     # Create Transformer using the above configuration
 
     MAX_POS_LEN = 4096
-    PI_LEVEL = 2
     IGNORE_META_LOSS = 1
-    RATIO = 4
     BPE = "_bpe"  # or ""
 
     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
-    CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{PI_LEVEL}"
-    DATA_BIN_DIR = f"Data/Glob/Preprocessed/model_spec/{DATA_BIN}/bin/"
-    DATA_VOC_DIR = f"Data/Glob/Preprocessed/model_spec/{DATA_BIN}/vocabs/"
-    from musicbpe_preprocesing import process_prime_midi, gen_one, get_trk_ins_map, \
-                                      get_note_seq, note_seq_to_midi_file, music_dict
+    DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
+    DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
+    from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, \
+                                       get_note_seq, note_seq_to_midi_file, music_dict
     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
+
+    # Load the test, train, and valid tfrecords from data_bin
+    train_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'train.tfrecord'])
+    valid_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'valid.tfrecord'])
+    test_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'test.tfrecord'])
+    dictionary = list(range(4, 978))  # from data_bin/dict.txt
+
+    """
+    from fairseq.models import FairseqLanguageModel
+    from google.colab import drive
+    drive.mount('/content/drive')
+    custom_lm = FairseqLanguageModel.from_pretrained('.', 
+        checkpoint_file=f'drive/MyDrive/checkpoint_last_{CHECKPOINT_SUFFIX}.pt', 
+        data_name_or_path=DATA_BIN_DIR, 
+        user_dir="SymphonyNet/src/fairseq/linear_transformer_inference")
+    m = custom_lm.models[0]
+    m.cuda()
+    m.eval()
+    """
+    # Convert this to use a tensorflow model
+    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/MusicBPE/checkpoint.ckpt",
+                                                    save_weights_only=True, save_freq="epoch", verbose=0)
+    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/MusicBPE")
+    model = build_model(len(dictionary), len(dictionary), feed_forward_dim=512, num_heads=8)
+
+    LOAD_MODEL = False
+    if LOAD_MODEL:
+        model.load_weights(f"Weights/Composition/MusicBPE/checkpoint.ckpt")
+        print("Loaded model weights")
+
+    model.fit(train_dataset, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback])
+    model.save(f"Weights/Composition/MBPE_choral.keras")
+
+    # Test the model
+    midi_name = 'Data/Generated/test.mid'
+    max_measure_cnt = 5
+    max_chord_measure_cnt = 0
+    prime, ins_label = process_prime_midi(midi_name, max_measure_cnt, max_chord_measure_cnt)
+    while True:
+        try:
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)
+            break
+        except Exception as e:
+            print(e)
+            continue
+    trk_ins_map = get_trk_ins_map(generated, ins_logits)
+    note_seq = get_note_seq(generated, trk_ins_map)
+    timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
+    output_name = f'output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid'
+    note_seq_to_midi_file(note_seq, output_name)
     pass
 
 
@@ -879,7 +894,8 @@ if __name__ == '__main__':
     # train_choral_composition_model(epochs=9)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    train_bpe_composition_model(epochs=100)
     # key, time_sig, tempo = None, None, None
     # key, time_sig, tempo = "D-:major", "3/4TS", 120
     # for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
