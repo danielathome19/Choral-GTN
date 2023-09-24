@@ -30,90 +30,35 @@ if not sys.warnoptions:
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-def train_bpe_composition_model(epochs=100):
-    """Trains a MusicBPE Transformer model to generate compositions."""
+def generate_composition_bpe():
+    """Generates a composition using the MusicBPE Transformer model."""
     config = {}
     with open("config.sh", "r") as f:
         for line in f:
             name, value = line.strip().split('=')
             config[name] = value
-
-    # 2. Setting Data Directory
-    # 3. Compute Settings
-    # N_GPU_LOCAL = len(tf.config.experimental.list_physical_devices('GPU'))
-    # UPDATE_FREQ = int(config['BATCH_SIZE']) / int(config['MAX_SENTENCES']) / N_GPU_LOCAL
-    # NN_ARCH = "linear_transformer_multi"
-    # CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{config['PI_LEVEL']}"
-
-    # 4. Training
-    """
-    CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7" PYTHONWARNINGS="ignore" fairseq-train 	${DATA_BIN_DIR} \
-        --seed ${SEED} \
-        --user-dir src/fairseq/linear_transformer \
-        --task symphony_modeling --criterion multiple_loss \
-        --save-dir ckpt/ --restore-file ckpt/checkpoint_last_${CHECKPOINT_SUFFIX}.pt \
-        --arch ${NN_ARCH} --sample-break-mode complete_doc  --tokens-per-sample ${MAX_POS_LEN} --sample-overlap-rate ${SOR}\
-        --optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-6 --clip-norm 0.0 \
-        --lr ${PEAK_LR} --lr-scheduler polynomial_decay --warmup-updates ${WARMUP_UPDATES}  --total-num-update ${TOTAL_UPDATES} \
-        --dropout 0.1 --weight-decay 0.01 \
-        --batch-size ${MAX_SENTENCES} --update-freq ${UPDATE_FREQ} \
-        --max-update ${TOTAL_UPDATES} --log-format simple --log-interval 100 \
-        --checkpoint-suffix _${CHECKPOINT_SUFFIX} \
-        --tensorboard-logdir logs/${CHECKPOINT_SUFFIX} \
-        --ratio ${RATIO} --evt-voc-size ${SIZE_0} --dur-voc-size ${SIZE_1} --trk-voc-size ${SIZE_2} --ins-voc-size ${SIZE_3} \
-        --max-rel-pos ${MAX_REL_POS} --max-mea-pos ${MAX_MEA_POS}  --perm-inv ${PI_LEVEL} \
-        2>&1 | tee ${CHECKPOINT_SUFFIX}_part${RECOVER}.log
-    """
-    # Create Transformer using the above configuration
-
     MAX_POS_LEN = 4096
     IGNORE_META_LOSS = 1
     BPE = "_bpe"  # or ""
-
     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
     DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
     DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
+    CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{config['PI_LEVEL']}"
     from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, \
                                        get_note_seq, note_seq_to_midi_file, music_dict
     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
-
-    # Load the test, train, and valid tfrecords from data_bin
-    train_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'train.tfrecord'])
-    valid_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'valid.tfrecord'])
-    test_dataset = tf.data.TFRecordDataset([DATA_BIN_DIR + 'test.tfrecord'])
-    dictionary = list(range(4, 978))  # from data_bin/dict.txt
-
-    """
     from fairseq.models import FairseqLanguageModel
-    from google.colab import drive
-    drive.mount('/content/drive')
     custom_lm = FairseqLanguageModel.from_pretrained('.', 
-        checkpoint_file=f'drive/MyDrive/checkpoint_last_{CHECKPOINT_SUFFIX}.pt', 
+        checkpoint_file=f"Weights/Composition/MusicBPE/checkpoint_last_{CHECKPOINT_SUFFIX}.pt",
         data_name_or_path=DATA_BIN_DIR, 
-        user_dir="SymphonyNet/src/fairseq/linear_transformer_inference")
-    m = custom_lm.models[0]
-    m.cuda()
-    m.eval()
-    """
-    # Convert this to use a tensorflow model
-    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/MusicBPE/checkpoint.ckpt",
-                                                    save_weights_only=True, save_freq="epoch", verbose=0)
-    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/MusicBPE")
-    model = build_model(len(dictionary), len(dictionary), feed_forward_dim=512, num_heads=8)
-
-    LOAD_MODEL = False
-    if LOAD_MODEL:
-        model.load_weights(f"Weights/Composition/MusicBPE/checkpoint.ckpt")
-        print("Loaded model weights")
-
-    model.fit(train_dataset, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback])
-    model.save(f"Weights/Composition/MBPE_choral.keras")
-
-    # Test the model
-    midi_name = 'Data/Generated/test.mid'
+        user_dir="Model")
+    model = custom_lm.models[0]
+    model.cuda()
+    model.eval()
+    prime_midi_name = 'Data/Generated/test_prime.mid'
     max_measure_cnt = 5
     max_chord_measure_cnt = 0
-    prime, ins_label = process_prime_midi(midi_name, max_measure_cnt, max_chord_measure_cnt)
+    prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
             generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)
@@ -124,7 +69,7 @@ def train_bpe_composition_model(epochs=100):
     trk_ins_map = get_trk_ins_map(generated, ins_logits)
     note_seq = get_note_seq(generated, trk_ins_map)
     timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
-    output_name = f'output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid'
+    output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"
     note_seq_to_midi_file(note_seq, output_name)
     pass
 
@@ -895,7 +840,7 @@ if __name__ == '__main__':
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
-    train_bpe_composition_model(epochs=100)
+    generate_composition_bpe()
     # key, time_sig, tempo = None, None, None
     # key, time_sig, tempo = "D-:major", "3/4TS", 120
     # for voice_dataset in ["Soprano", "Bass", "Alto", "Tenor"]:
