@@ -43,17 +43,17 @@ def generate_composition_bpe():
     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
     DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
     DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
-    CHECKPOINT_SUFFIX = f"{DATA_BIN}_PI{config['PI_LEVEL']}"
     from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, \
                                        get_note_seq, note_seq_to_midi_file, music_dict
     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
     from fairseq.models import FairseqLanguageModel
     custom_lm = FairseqLanguageModel.from_pretrained('.', 
-        checkpoint_file=f"Weights/Composition/MusicBPE/checkpoint_last_{CHECKPOINT_SUFFIX}.pt",
+        checkpoint_file=f"Weights/Composition/MusicBPE/checkpoint_last.pt",
         data_name_or_path=DATA_BIN_DIR, 
         user_dir="Model")
     model = custom_lm.models[0]
-    model.cuda()
+    # model.cuda()
+    model.to('cpu')
     model.eval()
     prime_midi_name = 'Data/Generated/test_prime.mid'
     max_measure_cnt = 5

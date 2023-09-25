@@ -1105,7 +1105,7 @@ def calc_pos(evt_tok, last_rel_pos, last_mea_pos):
 def get_next(model, p, memory, has_prime=False):
     pr = torch.from_numpy(np.array(p))[None, None, :].cuda()
 
-    (e, d, t, ins), memory = model(src_tokens=pr, src_lengths=memory)
+    (e, d, t, ins) = model(src_tokens=pr, src_lengths=memory)  # (e, d, t, ins), memory
     e, d, t, ins = e[0, :], d[0, :], t[0, :], ins[0, :]
     if has_prime:
         return (np.int64(EOS), np.int64(EOS), np.int64(EOS), ins), memory
@@ -1119,26 +1119,6 @@ def get_next(model, p, memory, has_prime=False):
         return (np.int64(music_dict.word2index(0, rep)), np.int64(NOTON_PAD_DUR), np.int64(NOTON_PAD_TRK), ins), memory
     if not ison(evt_word):
         return (evt, np.int64(NOTON_PAD_DUR), np.int64(NOTON_PAD_TRK), ins), memory
-    # pr = tf.convert_to_tensor(np.array(p), dtype=tf.float32)[tf.newaxis, tf.newaxis, :]
-    #
-    # (e, d, t, ins), memory = model(pr, memory)
-    # e, d, t, ins = e[0, :], d[0, :], t[0, :], ins[0, :]
-    # if has_prime:
-    #     return (tf.constant(EOS, dtype=tf.int64), tf.constant(EOS, dtype=tf.int64), tf.constant(EOS, dtype=tf.int64),
-    #             ins), memory
-    #
-    # evt = sampling(e.numpy())
-    # while evt == EOS:
-    #     return (evt, tf.constant(EOS, dtype=tf.int64), tf.constant(EOS, dtype=tf.int64), ins), memory
-    #
-    # evt_word = music_dict.index2word(0, evt)
-    # if evt_word.startswith('H'):
-    #     rep = get_next_chord(evt_word)
-    #     return (tf.constant(music_dict.word2index(0, rep), dtype=tf.int64), tf.constant(NOTON_PAD_DUR, dtype=tf.int64),
-    #             tf.constant(NOTON_PAD_TRK, dtype=tf.int64), ins), memory
-    # if not ison(evt_word):
-    #     return (
-    #     evt, tf.constant(NOTON_PAD_DUR, dtype=tf.int64), tf.constant(NOTON_PAD_TRK, dtype=tf.int64), ins), memory
 
     dur = sampling(d)
     while dur == EOS:
@@ -1151,7 +1131,7 @@ def get_next(model, p, memory, has_prime=False):
     return (evt, dur, trk, ins), memory
 
 
-def gen_one(model, prime_nums, MAX_LEN=4090, MIN_LEN=0):
+def gen_one(model, prime_nums, MAX_LEN = 4090, MIN_LEN = 0):
     global prime_mea_idx
     prime_mea_idx = 0
     prime = copy.deepcopy(prime_nums)
@@ -1162,48 +1142,25 @@ def gen_one(model, prime_nums, MAX_LEN=4090, MIN_LEN=0):
         cur_rel_pos = 0
         cur_mea = 0
         for item, next_item in zip(prime[:-1], prime[1:]):
-            (e, d, t, ins), memo = get_next(model, item, memo, has_prime=True)
+            (e,d,t,ins), memo = get_next(model, item, memo, has_prime=True)
             cur_rel_pos, cur_mea = calc_pos(next_item[0], cur_rel_pos, cur_mea)
             ins_list.append(ins)
 
-        (e, d, t, ins), memo = get_next(model, prime[-1], memo, has_prime=False)
+        (e,d,t,ins), memo = get_next(model, prime[-1], memo, has_prime=False)
         cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
 
-        prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
+        prime.append((e,d,t,len(prime)+1, cur_rel_pos, cur_mea))
         ins_list.append(ins)
 
         for i in tqdm(range(MAX_LEN - len(prime))):
-            (e, d, t, ins), memo = get_next(model, prime[-1], memo)
+            (e,d,t,ins), memo = get_next(model, prime[-1], memo)
             if t == EOS:
                 assert len(prime) > MIN_LEN, 'Invalid generation: Generated excerpt too short.'
                 break
             cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
 
-            prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
+            prime.append((e,d,t,len(prime)+1, cur_rel_pos, cur_mea))
             ins_list.append(ins)
-    # memo = None
-    # cur_rel_pos = 0
-    # cur_mea = 0
-    # for item, next_item in zip(prime[:-1], prime[1:]):
-    #     (e, d, t, ins), memo = get_next(model, item, memo, has_prime=True)
-    #     cur_rel_pos, cur_mea = calc_pos(next_item[0], cur_rel_pos, cur_mea)
-    #     ins_list.append(ins)
-    #
-    # (e, d, t, ins), memo = get_next(model, prime[-1], memo, has_prime=False)
-    # cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
-    #
-    # prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
-    # ins_list.append(ins)
-    #
-    # for i in range(MAX_LEN - len(prime)):
-    #     (e, d, t, ins), memo = get_next(model, prime[-1], memo)
-    #     if t == EOS:
-    #         assert len(prime) > MIN_LEN, 'Invalid generation: Generated excerpt too short.'
-    #         break
-    #     cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
-    #
-    #     prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
-    #     ins_list.append(ins)
 
     return prime, ins_list
 
