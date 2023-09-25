@@ -52,8 +52,8 @@ def generate_composition_bpe():
         data_name_or_path=DATA_BIN_DIR, 
         user_dir="Model")
     model = custom_lm.models[0]
-    # model.cuda()
-    model.to('cpu')
+    model.cuda()
+    # model.to('cpu')
     model.eval()
     prime_midi_name = 'Data/Generated/test_prime.mid'
     max_measure_cnt = 5
