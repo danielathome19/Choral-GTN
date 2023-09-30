@@ -18,8 +18,8 @@ fi
 DATA_BIN_DIR=Data/Glob/Preprocessed/Model_spec/${DATA_BIN}/bin
 
 
-RECOVER=5
-MAX_EPOCHS=12
+RECOVER=2
+MAX_EPOCHS=4
 
 N_GPU_LOCAL=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 UPDATE_FREQ=$((${BATCH_SIZE} / ${MAX_SENTENCES} / ${N_GPU_LOCAL}))
@@ -28,12 +28,12 @@ CHECKPOINT_SUFFIX=${DATA_BIN}_PI${PI_LEVEL}
 
 # --log-format simple --log-interval 100
 #	--checkpoint-suffix _${CHECKPOINT_SUFFIX} \
-# --save-dir Weights/Composition/MusicBPE/ --restore-file Weights/Composition/MusicBPE/checkpoint_last_${CHECKPOINT_SUFFIX}.pt \
+# --save-dir Weights/MusicBPE/ --restore-file Weights/MusicBPE/checkpoint_last_${CHECKPOINT_SUFFIX}.pt \
 CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7" PYTHONWARNINGS="ignore" fairseq-train 	${DATA_BIN_DIR} \
 	--seed ${SEED} \
 	--user-dir Model \
 	--task symphony_modeling --criterion multiple_loss \
-	--save-dir Weights/Composition/MusicBPE/ --restore-file Weights/Composition/MusicBPE/checkpoint_last.pt \
+	--save-dir Weights/MusicBPE/ --restore-file Weights/MusicBPE/checkpoint_last.pt \
 	--arch ${NN_ARCH} --sample-break-mode complete_doc  --tokens-per-sample ${MAX_POS_LEN} --sample-overlap-rate ${SOR}\
 	--optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-6 --clip-norm 0.0 \
 	--lr ${PEAK_LR} --lr-scheduler polynomial_decay --warmup-updates ${WARMUP_UPDATES}  --total-num-update ${TOTAL_UPDATES} \

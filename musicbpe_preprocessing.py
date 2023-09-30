@@ -23,9 +23,7 @@ from miditoolkit.midi.parser import MidiFile
 from miditoolkit.midi.containers import Instrument
 from miditoolkit.midi.containers import Note as mtkNote
 
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 # region Encoding
 pit2alphabet = ['C', 'd', 'D', 'e', 'E', 'F', 'g', 'G', 'a', 'A', 'b', 'B']
@@ -143,6 +141,7 @@ def sort_tok_str(x):
         return ('a',) + bpe_str2int(x)
 
     return 'A', x[1] != 'b', x[1] != 'p', x[1] != 'e'
+
 
 # endregion Encoding
 
@@ -632,6 +631,7 @@ def mp_handler(file_paths):
 
     print("Create txt file takes: ", time.time() - txt_start)
 
+
 # endregion Preprocess_MIDI
 
 
@@ -767,6 +767,7 @@ def count_single_mulpies(toks, ratio=RATIO):
 
     return chord_dict, l_toks // ratio
 
+
 # endregion Get_BPE_Data
 
 
@@ -774,6 +775,7 @@ def count_single_mulpies(toks, ratio=RATIO):
 PAD = 1
 EOS = 2
 BOS = 0
+
 
 # RATIO = 4
 # SAMPLE_LEN_MAX = 4096
@@ -943,6 +945,7 @@ def makevocabs(line, ratio):
         ret_sets.append(set(sub_toks))
     return ret_sets
 
+
 # endregion Make_Data
 
 
@@ -1013,6 +1016,7 @@ def process_prime_midi(prime_midi_path, max_measures, max_chord_measures, perm_i
         toks = apply_bpe_for_sentence(toks, music_dict.merges, music_dict.merged_vocs, {})
 
     measures, _, _, _ = process_single_piece((toks, music_dict.str2int), ratio, sample_len_max)
+    # print(f"Length of measures: {len(measures)}")
 
     prime_nums = [[EOS] * ratio + [0, 0]]
     prime_nums[0][3] = 1  # set instrument to vanilla pos
@@ -1078,12 +1082,10 @@ def calc_pos(evt_tok, last_rel_pos, last_mea_pos):
     if typ == 'm':
         if (last_mea_pos + 1) % 3 == 0:  # empty measure
             last_mea_pos += 1
-        assert (
-                           last_mea_pos + 1) % 3 == 1, f'Invalid generation: error <bos> measure pos {last_mea_pos + 1}'  # TODO: empty measure
+        assert (last_mea_pos + 1) % 3 == 1, f'Invalid generation: error <bos> measure pos {last_mea_pos + 1}'  # TODO: empty measure
         return 0, last_mea_pos + 1
     elif typ == 'h':
-        assert (
-                           last_mea_pos + 1) % 3 == 2, f'Invalid generation: there must be a <bom> before a chord {last_mea_pos + 1}'
+        assert (last_mea_pos + 1) % 3 == 2, f'Invalid generation: there must be a <bom> before a chord {last_mea_pos + 1}'
         return 0, last_mea_pos + 1
     elif typ == 'n':
         if last_mea_pos % 3 == 2:
@@ -1131,7 +1133,7 @@ def get_next(model, p, memory, has_prime=False):
     return (evt, dur, trk, ins), memory
 
 
-def gen_one(model, prime_nums, MAX_LEN = 4090, MIN_LEN = 0):
+def gen_one(model, prime_nums, MAX_LEN=4090, MIN_LEN=0):
     global prime_mea_idx
     prime_mea_idx = 0
     prime = copy.deepcopy(prime_nums)
@@ -1142,25 +1144,29 @@ def gen_one(model, prime_nums, MAX_LEN = 4090, MIN_LEN = 0):
         cur_rel_pos = 0
         cur_mea = 0
         for item, next_item in zip(prime[:-1], prime[1:]):
-            (e,d,t,ins), memo = get_next(model, item, memo, has_prime=True)
+            (e, d, t, ins), memo = get_next(model, item, memo, has_prime=True)
             cur_rel_pos, cur_mea = calc_pos(next_item[0], cur_rel_pos, cur_mea)
             ins_list.append(ins)
 
-        (e,d,t,ins), memo = get_next(model, prime[-1], memo, has_prime=False)
+        (e, d, t, ins), memo = get_next(model, prime[-1], memo, has_prime=False)
         cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
 
-        prime.append((e,d,t,len(prime)+1, cur_rel_pos, cur_mea))
+        prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
+        # assert len(prime) <= MAX_LEN, f"Prime length exceeded MAX_LEN after first loop: {len(prime)}"
         ins_list.append(ins)
 
         for i in tqdm(range(MAX_LEN - len(prime))):
-            (e,d,t,ins), memo = get_next(model, prime[-1], memo)
+            (e, d, t, ins), memo = get_next(model, prime[-1], memo)
             if t == EOS:
-                assert len(prime) > MIN_LEN, 'Invalid generation: Generated excerpt too short.'
+                assert len(prime) > MIN_LEN, f'Invalid generation: Generated excerpt too short. ' \
+                                             f'Found {len(prime)} tokens, expected at least {MIN_LEN}.'
                 break
             cur_rel_pos, cur_mea = calc_pos(e, cur_rel_pos, cur_mea)
 
-            prime.append((e,d,t,len(prime)+1, cur_rel_pos, cur_mea))
+            prime.append((e, d, t, len(prime) + 1, cur_rel_pos, cur_mea))
             ins_list.append(ins)
+        # assert len(prime) <= MAX_LEN, f"Prime length exceeded MAX_LEN after second loop: {len(prime)}"
+        # assert len(prime) > MIN_LEN, f"Prime length is less than MIN_LEN after second loop: {len(prime)}"
 
     return prime, ins_list
 

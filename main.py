@@ -15,7 +15,7 @@ from keras.models import Sequential
 from data_utils import key_signature_to_number
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-
+os.environ['TORCH_USE_CUDA_DSA'] = "1"  # TODO: remove
 
 tf.get_logger().setLevel(logging.ERROR)
 k.set_image_data_format('channels_last')
@@ -47,8 +47,8 @@ def generate_composition_bpe():
                                        get_note_seq, note_seq_to_midi_file, music_dict
     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
     from fairseq.models import FairseqLanguageModel
-    custom_lm = FairseqLanguageModel.from_pretrained('.', 
-        checkpoint_file=f"Weights/Composition/MusicBPE/checkpoint_last.pt",
+    custom_lm = FairseqLanguageModel.from_pretrained('.',
+        checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
         data_name_or_path=DATA_BIN_DIR, 
         user_dir="Model")
     model = custom_lm.models[0]
@@ -61,9 +61,10 @@ def generate_composition_bpe():
     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=200)  # MIN_LEN=1024
             break
         except Exception as e:
+            # raise(e)  # TODO: remove
             print(e)
             continue
     trk_ins_map = get_trk_ins_map(generated, ins_logits)

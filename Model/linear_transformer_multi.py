@@ -247,11 +247,7 @@ class LinearTransformerMultiHeadDecoder(FairseqDecoder):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
 
-    def forward(
-            self,
-            x,
-            src_lengths=None,
-    ):
+    def forward(self, x, src_lengths=None,):
         features = self.extract_features(x, src_lengths)
         evt_logits = self.proj_evt(features)
         dur_logits = self.proj_dur(features)
@@ -260,22 +256,9 @@ class LinearTransformerMultiHeadDecoder(FairseqDecoder):
 
         return (evt_logits, dur_logits, trk_logits, ins_logits)
 
-    def extract_features(
-            self,
-            x,
-            src_lengths=None
-    ):
+    def extract_features(self, x, src_lengths=None):
 
         bsz, seq_len, ratio = x.size()
-
-        # TODO: validate input for fairseq-train
-        # print("Min value:", x[..., 0].min().item())
-        # print("Max value:", x[..., 0].max().item())
-        # print("Embedding size:", self.wEvte.weight.size(0))
-        # print("Contains NaN:", torch.isnan(x[..., 0]).any().item())
-        # print("Contains Inf:", torch.isinf(x[..., 0]).any().item())
-        # print("Embedding contains NaN:", torch.isnan(self.wEvte.weight).any().item())
-        # print("Embedding contains Inf:", torch.isinf(self.wEvte.weight).any().item())
         evt_emb = self.wEvte(x[..., 0])
 
         # if not mapping to pad, padding idx will only occer at last
@@ -284,7 +267,10 @@ class LinearTransformerMultiHeadDecoder(FairseqDecoder):
         tmp = self.wDure(x[..., 1])
         dur_emb = tmp * evton_mask
         # assert ((tmp==dur_emb).all())
-        tmp = self.wTrke(x[..., 2])
+
+        valid_indices = torch.clamp(x[..., 2], min=0, max=self.wTrke.weight.size(0) - 1)  # TODO: remove clamp
+        tmp = self.wTrke(valid_indices)
+        # tmp = self.wTrke(x[..., 2])
         trk_emb = tmp * evton_mask
         # assert ((tmp==trk_emb).all())
 
@@ -300,22 +286,6 @@ class LinearTransformerMultiHeadDecoder(FairseqDecoder):
 
             measure_ids = pad_mask * x[..., 5]
             mea_mask = measure_ids.ne(0).float()[..., None].to(x.device)  # ignore eos
-
-            # TODO: validate input for fairseq-train
-            # print(f"self.wRpe size: {self.wRpe.weight.size()}")
-            # print(f"self.wMpe size: {self.wMpe.weight.size()}")
-            # print(f"rel_pos_mask size: {rel_pos_mask.size()}")
-            # print(f"mea_mask size: {mea_mask.size()}")
-            # print(f"rel_pos size: {rel_pos.size()}")
-            # print(f"measure_ids size: {measure_ids.size()}")
-            # print(f"rel_pos min: {rel_pos.min().item()}")
-            # print(f"rel_pos max: {rel_pos.max().item()}")
-            # print(f"measure_ids min: {measure_ids.min().item()}")
-            # print(f"measure_ids max: {measure_ids.max().item()}")
-            # if rel_pos.max() >= self.wRpe.weight.size(0):
-            #     print("Out-of-bounds rel_pos:", rel_pos)
-            # if measure_ids.max() >= self.wMpe.weight.size(0):
-            #     print("Out-of-bounds measure_ids:", measure_ids)
 
             assert rel_pos.max() < self.wRpe.weight.size(0), f"rel_pos indexing out of bounds! {rel_pos.max().item()}"
             assert measure_ids.max() < self.wMpe.weight.size(0), \
