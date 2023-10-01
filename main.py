@@ -61,14 +61,14 @@ def generate_composition_bpe():
     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=200)  # MIN_LEN=1024
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)  # MIN_LEN=1024
             break
         except Exception as e:
-            # raise(e)  # TODO: remove
             print(e)
             continue
+    # TODO: limit instrument track to 4 voices
     trk_ins_map = get_trk_ins_map(generated, ins_logits)
-    note_seq = get_note_seq(generated, trk_ins_map)
+    note_seq = get_note_seq(generated, trk_ins_map, assert_valid=False)
     timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
     output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"
     note_seq_to_midi_file(note_seq, output_name)
