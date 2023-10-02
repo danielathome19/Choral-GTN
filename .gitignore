@@ -3,8 +3,12 @@
 /venv/
 /Logs/
 /MusicBPE/
+/Data/Generated/
 /spectral_utils.py
 /get_bpe_data.py
 /make_data.py
 /music_bpe_exec
 /preprocess_midi.py
+/requirements_old.txt
+/Old.txt
+/History.txt

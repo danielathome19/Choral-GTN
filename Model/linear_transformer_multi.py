@@ -631,7 +631,7 @@ class MultiheadDataset(MonolingualDataset):
 
 
 @dataclass
-class SymphonyModelingConfig(LanguageModelingConfig):
+class ChoralModelingConfig(LanguageModelingConfig):
     ratio: int = field(
         default=4, metadata={"help": "note/metadata attribute amount: default (evt, dur, trk, ins)"}
     )
@@ -662,8 +662,8 @@ class SymphonyModelingConfig(LanguageModelingConfig):
     )
 
 
-@register_task("symphony_modeling", dataclass=SymphonyModelingConfig)
-class SymphonyModelingTask(LanguageModelingTask):
+@register_task("choral_modeling", dataclass=ChoralModelingConfig)
+class ChoralModelingTask(LanguageModelingTask):
     def load_dataset(self, split, epoch=1, combine=False, **kwargs):
         """Load a given dataset split.
 

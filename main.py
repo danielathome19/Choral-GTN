@@ -15,18 +15,22 @@ from keras.models import Sequential
 from data_utils import key_signature_to_number
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-os.environ['TORCH_USE_CUDA_DSA'] = "1"  # TODO: remove
+from fairseq.models import FairseqLanguageModel
+from musicbpe_preprocessing import note_seq_to_midi_file
+from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, get_note_seq, music_dict
+
 
 tf.get_logger().setLevel(logging.ERROR)
 k.set_image_data_format('channels_last')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ['TORCH_USE_CUDA_DSA'] = "1"  # TODO: remove
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
 if not sys.warnoptions:
-    warnings.simplefilter("ignore")  # ignore warnings
+    warnings.simplefilter("ignore")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
@@ -43,25 +47,19 @@ def generate_composition_bpe():
     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
     DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
     DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
-    from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, \
-                                       get_note_seq, note_seq_to_midi_file, music_dict
     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
-    from fairseq.models import FairseqLanguageModel
-    custom_lm = FairseqLanguageModel.from_pretrained('.',
-        checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
-        data_name_or_path=DATA_BIN_DIR, 
-        user_dir="Model")
+    custom_lm = FairseqLanguageModel.from_pretrained('.', checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
+                                                     data_name_or_path=DATA_BIN_DIR, user_dir="Model")
     model = custom_lm.models[0]
     model.cuda()
-    # model.to('cpu')
     model.eval()
-    prime_midi_name = 'Data/Generated/test_prime.mid'
+    prime_midi_name = 'Data/Generated/test_prime2.mid'
     max_measure_cnt = 5
-    max_chord_measure_cnt = 0
+    max_chord_measure_cnt = 5
     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)  # MIN_LEN=1024
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)
             break
         except Exception as e:
             print(e)

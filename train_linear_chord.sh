@@ -18,8 +18,8 @@ fi
 DATA_BIN_DIR=Data/Glob/Preprocessed/Model_spec/${DATA_BIN}/bin
 
 
-RECOVER=6
-MAX_EPOCHS=12
+RECOVER=10
+MAX_EPOCHS=20
 
 N_GPU_LOCAL=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 UPDATE_FREQ=$((${BATCH_SIZE} / ${MAX_SENTENCES} / ${N_GPU_LOCAL}))
@@ -32,7 +32,7 @@ CHECKPOINT_SUFFIX=${DATA_BIN}_PI${PI_LEVEL}
 CUDA_VISIBLE_DEVICES="0,1,2,3,4,5,6,7" PYTHONWARNINGS="ignore" fairseq-train 	${DATA_BIN_DIR} \
 	--seed ${SEED} \
 	--user-dir Model \
-	--task symphony_modeling --criterion multiple_loss \
+	--task choral_modeling --criterion multiple_loss \
 	--save-dir Weights/MusicBPE/ --restore-file Weights/MusicBPE/checkpoint_last.pt \
 	--arch ${NN_ARCH} --sample-break-mode complete_doc  --tokens-per-sample ${MAX_POS_LEN} --sample-overlap-rate ${SOR}\
 	--optimizer adam --adam-betas '(0.9, 0.98)' --adam-eps 1e-6 --clip-norm 0.0 \
