@@ -18,8 +18,8 @@ fi
 DATA_BIN_DIR=Data/Glob/Preprocessed/Model_spec/${DATA_BIN}/bin
 
 
-RECOVER=10
-MAX_EPOCHS=20
+RECOVER=15
+MAX_EPOCHS=30
 
 N_GPU_LOCAL=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 UPDATE_FREQ=$((${BATCH_SIZE} / ${MAX_SENTENCES} / ${N_GPU_LOCAL}))
