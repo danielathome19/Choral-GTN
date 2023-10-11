@@ -23,8 +23,8 @@ from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map,
 tf.get_logger().setLevel(logging.ERROR)
 k.set_image_data_format('channels_last')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TORCH_USE_CUDA_DSA'] = "1"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ['TORCH_USE_CUDA_DSA'] = "1"  # TODO: remove
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
@@ -53,19 +53,18 @@ def generate_composition_bpe():
     model = custom_lm.models[0]
     model.cuda()
     model.eval()
-    prime_midi_name = 'Data/Generated/test_prime2.mid'
+    prime_midi_name = 'Data/Generated/test_prime.mid'
     max_measure_cnt = 5
-    max_chord_measure_cnt = 5
+    max_chord_measure_cnt = 0
     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=1024)
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=256)  # 1024
             break
         except Exception as e:
             print(e)
             continue
-    # TODO: limit instrument track to 4 voices
-    trk_ins_map = get_trk_ins_map(generated, ins_logits)
+    trk_ins_map = get_trk_ins_map(generated, ins_logits)  # TODO: limit to 4 tracks
     note_seq = get_note_seq(generated, trk_ins_map, assert_valid=False)
     timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
     output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"

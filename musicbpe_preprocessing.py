@@ -1104,11 +1104,15 @@ def calc_pos(evt_tok, last_rel_pos, last_mea_pos):
     return last_rel_pos, last_mea_pos  # on
 
 
-def get_next(model, p, memory, has_prime=False):
-    pr = torch.from_numpy(np.array(p))[None, None, :].cuda()
+# active_tracks = set()
 
+
+def get_next(model, p, memory, has_prime=False):
+    # global active_tracks
+    pr = torch.from_numpy(np.array(p))[None, None, :].cuda()
     (e, d, t, ins) = model(src_tokens=pr, src_lengths=memory)  # (e, d, t, ins), memory
     e, d, t, ins = e[0, :], d[0, :], t[0, :], ins[0, :]
+
     if has_prime:
         return (np.int64(EOS), np.int64(EOS), np.int64(EOS), ins), memory
     evt = sampling(e)
@@ -1129,6 +1133,11 @@ def get_next(model, p, memory, has_prime=False):
         dur = sampling(d)
 
     trk = sampling(t, p=0)
+    # if len(active_tracks) >= 4:  # If we already have 4 active tracks, reuse them
+    #     trk = np.random.choice(list(active_tracks))  # Might want a different strategy to select an active track
+    # else:
+    #     trk = sampling(t, p=0)  # Sampling a new track
+    #     active_tracks.add(trk)  # Adding the new track to the set of active tracks
 
     return (evt, dur, trk, ins), memory
 
@@ -1168,6 +1177,8 @@ def gen_one(model, prime_nums, MAX_LEN=4090, MIN_LEN=0):
         # assert len(prime) <= MAX_LEN, f"Prime length exceeded MAX_LEN after second loop: {len(prime)}"
         # assert len(prime) > MIN_LEN, f"Prime length is less than MIN_LEN after second loop: {len(prime)}"
 
+    # global active_tracks
+    # active_tracks.clear()
     return prime, ins_list
 
 
