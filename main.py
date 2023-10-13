@@ -54,12 +54,12 @@ def generate_composition_bpe():
     model.cuda()
     model.eval()
     prime_midi_name = 'Data/Generated/test_prime.mid'
-    max_measure_cnt = 5
+    max_measure_cnt = 9
     max_chord_measure_cnt = 0
     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
     while True:
         try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=256)  # 1024
+            generated, ins_logits = gen_one(model, prime, MIN_LEN=100)  # 1024
             break
         except Exception as e:
             print(e)

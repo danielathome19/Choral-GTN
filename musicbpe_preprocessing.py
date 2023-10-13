@@ -1082,22 +1082,22 @@ def calc_pos(evt_tok, last_rel_pos, last_mea_pos):
     if typ == 'm':
         if (last_mea_pos + 1) % 3 == 0:  # empty measure
             last_mea_pos += 1
-        #assert (last_mea_pos + 1) % 3 == 1, f'Invalid generation: error <bos> measure pos {last_mea_pos + 1}'  # TODO: empty measure
+        assert (last_mea_pos + 1) % 3 == 1, f'Invalid generation: error <bos> measure pos {last_mea_pos + 1}'  # TODO: empty measure
         return 0, last_mea_pos + 1
     elif typ == 'h':
-        #assert (last_mea_pos + 1) % 3 == 2, f'Invalid generation: there must be a <bom> before a chord {last_mea_pos + 1}'
+        assert (last_mea_pos + 1) % 3 == 2, f'Invalid generation: there must be a <bom> before a chord {last_mea_pos + 1}'
         return 0, last_mea_pos + 1
     elif typ == 'n':
         if last_mea_pos % 3 == 2:
             last_mea_pos += 1
-        #assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <cc> must be a multiple of 3 {last_mea_pos}'
+        assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <cc> must be a multiple of 3 {last_mea_pos}'
         return 1, last_mea_pos
     elif typ == 'p':
-        #assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <pos> must be a multiple of 3 {last_mea_pos}'
-        #assert (last_rel_pos + 1) % 2 == 0, f'Invalid generation: rel pos of <pos> must be even {last_rel_pos + 1}'
+        assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <pos> must be a multiple of 3 {last_mea_pos}'
+        assert (last_rel_pos + 1) % 2 == 0, f'Invalid generation: rel pos of <pos> must be even {last_rel_pos + 1}'
         return last_rel_pos + 1, last_mea_pos
 
-    #assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <on> must be a multiple of 3 {last_mea_pos}'
+    assert last_mea_pos % 3 == 0, f'Invalid generation: mea pos of <on> must be a multiple of 3 {last_mea_pos}'
     if last_rel_pos % 2 == 0:  # last token is a <pos>
         last_rel_pos += 1
     # TODO: toggle assertions back on

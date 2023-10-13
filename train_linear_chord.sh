@@ -18,7 +18,7 @@ fi
 DATA_BIN_DIR=Data/Glob/Preprocessed/Model_spec/${DATA_BIN}/bin
 
 
-RECOVER=21
+RECOVER=23
 MAX_EPOCHS=100
 
 N_GPU_LOCAL=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
