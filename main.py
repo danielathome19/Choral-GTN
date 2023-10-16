@@ -645,6 +645,8 @@ def train_composition_model(dataset="Soprano", epochs=100, load_augmented_datase
         pass
 
 
+# region FeatureModels
+
 def train_duration_model(dataset="Soprano", epochs=100):
     """Trains a Bi-LSTM model to predict the duration of the next note given the previous note and duration."""
     df = pd.read_csv(f"Data/Tabular/{dataset}.csv", sep=';')
@@ -933,6 +935,8 @@ def train_key_model(epochs=10):
     print("Predicted keys:", np.array([key_signature_to_number(x) for x in predicted_key_sigs]))
 
     return model, scaler, max_event_len
+
+# endregion FeatureModels
 
 
 if __name__ == '__main__':
