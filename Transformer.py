@@ -68,7 +68,8 @@ class TransformerBlock(layers.Layer):
         self.embed_dim = embed_dim
         self.ff_dim = ff_dim
         self.dropout_rate = dropout_rate
-        self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
+        # self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
+        self.attn = layers.MultiHeadAttention(num_heads=num_heads, key_dim=self.key_dim, output_shape=self.embed_dim)
         self.dropout_1 = layers.Dropout(self.dropout_rate)
         self.ln_1 = layers.LayerNormalization(epsilon=1e-6)
         self.ffn_1 = layers.Dense(self.ff_dim, activation="relu")
@@ -81,6 +82,7 @@ class TransformerBlock(layers.Layer):
         batch_size = input_shape[0]
         seq_len = input_shape[1]
         causal_mask = causal_attention_mask(batch_size, seq_len, seq_len, tf.bool)
+        causal_mask = tf.expand_dims(causal_mask, 1)  # Add an additional dimension; TODO: remove
         attention_output, attention_scores = self.attn(inputs, inputs, attention_mask=causal_mask,
                                                        return_attention_scores=True)
         attention_output = self.dropout_1(attention_output)
@@ -350,3 +352,99 @@ class MusicGenerator(callbacks.Callback):
         if self.verbose:
             print(info[-1]["prompt"])
         midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch+1).zfill(4) + ".mid"))
+
+
+# TODO: fix or remove
+class TokenAndPositionEmbedding2(layers.Layer):
+    def __init__(self, max_values, embed_dim):
+        super(TokenAndPositionEmbedding2, self).__init__()
+        self.embed_dim = embed_dim
+        self.embeddings = [layers.Embedding(input_dim=v, output_dim=embed_dim) for v in max_values]
+        self.pos_emb = SinePositionEncoding()
+
+    def call(self, x):
+        # Assuming x is of shape [batch_size, seq_len, num_features]
+        embeddings = [embed(x[..., i]) for i, embed in enumerate(self.embeddings)]
+        embedding = tf.reduce_sum(embeddings, axis=0)  # Combine embeddings
+        positions = self.pos_emb(embedding)
+        return embedding + positions
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"max_values": [e.input_dim for e in self.embeddings], "embed_dim": self.embed_dim})
+        return config
+
+
+class MusicGenerator2(callbacks.Callback):
+    def __init__(self, token_to_index, scaler=None, top_k=10, generate_len=50,
+                 output_path="Data/Generated/Training", verbose=False):
+        super().__init__()
+        self.token_to_index = token_to_index
+        self.index_to_token = {index: token for token, index in token_to_index.items()}
+        self.top_k = top_k
+        self.generate_len = generate_len
+        self.output_path = output_path
+        self.scaler = scaler
+        self.verbose = verbose
+
+    @staticmethod
+    def sample_from(probs, temperature):
+        probs = probs ** (1 / temperature)
+        probs = probs / np.sum(probs)
+        return np.random.choice(len(probs), p=probs), probs
+
+    def get_token(self, tokens, temperature):
+        sample_token_idx = 1
+        while sample_token_idx == 1:
+            sample_token_idx, token_probs = self.sample_from(tokens[0][-1], temperature)
+            sample_token = self.index_to_token[sample_token_idx]
+        return sample_token, sample_token_idx, token_probs
+
+    def generate(self, start_tokens, max_tokens, temperature, model=None):
+        if model is not None:
+            self.model = model
+
+        start_token_indices = [self.token_to_index.get(x, 1) for x in start_tokens]
+        sample_token = None
+        info = []
+
+        midi_stream = self.tokens_to_midi(start_tokens)  # Generate initial midi stream from start tokens
+
+        while len(start_token_indices) < max_tokens:
+            x1 = np.array([start_token_indices])
+            preds = self.model.predict(x1, verbose=0)[0]
+
+            # Your sampling logic here. For simplicity, let’s use argmax.
+            sample_token_idx = np.argmax(preds[-1])
+            sample_token = self.index_to_token[sample_token_idx]
+
+            # If you have an end token, you might break the loop here.
+            if sample_token == 'END':
+                break
+
+            # Add the new token to the sequence and generate its midi.
+            start_tokens.append(sample_token)
+            start_token_indices.append(sample_token_idx)
+            new_midi_part = self.tokens_to_midi([sample_token])
+            midi_stream.append(new_midi_part)
+
+        return midi_stream
+
+    def on_epoch_end(self, epoch, logs=None):
+        start_tokens = [0, -1, None, None, 0]
+        midi_stream = self.generate(start_tokens, max_tokens=self.generate_len, temperature=0.5)
+        if self.verbose:
+            print("Generated tokens:", start_tokens)
+        midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch+1).zfill(4) + ".mid"))
+
+    def tokens_to_midi(self, tokens):
+        if self.scaler is not None:
+            tokens = self.scaler.inverse_transform(tokens)
+        midi_stream = music21.stream.Score()
+        for token in tokens:
+            music21_obj, duration_obj = decode_token_to_music21(token)
+            if music21_obj is not None:
+                if duration_obj is not None:
+                    music21_obj.duration = duration_obj
+                midi_stream.append(music21_obj)
+        return midi_stream
