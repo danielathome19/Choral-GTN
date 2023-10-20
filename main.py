@@ -36,111 +36,6 @@ if not sys.warnoptions:
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-# region ChoralTransformer
-def build_choral_model(vocab_size, embedding_dim=256, feed_forward_dim=256,
-                       num_heads=5, dropout_rate=0.3, verbose=True):
-    key_dim = embedding_dim // num_heads
-    inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    embeddings = TokenAndPositionEmbedding2(vocab_size, embedding_dim)(inputs)
-    x, attention_scores = TransformerBlock(
-        name="attention",
-        embed_dim=embedding_dim,
-        ff_dim=feed_forward_dim,
-        num_heads=num_heads,
-        key_dim=key_dim,
-        dropout_rate=dropout_rate
-    )(embeddings)
-    outputs = layers.Dense(vocab_size, activation="softmax", name="outputs")(x)
-    model = models.Model(inputs=inputs, outputs=outputs)
-    model.compile("adam", loss=losses.SparseCategoricalCrossentropy())
-    if verbose:
-        model.summary()
-    return model
-
-
-def train_choral_transformer(epochs=100):
-    BATCH_SIZE = 256
-    GENERATE_LEN = 50
-    LOAD_MODEL = False
-
-    with open("Data/Glob/Choral/Choral.pkl", "rb") as file:
-        data = pkl.load(file)
-
-    # Iterate through the data; change all voices to numbers and START and END to -1 and -2
-    voice_mapping = {"Soprano": 0, "Alto": 1, "Tenor": 2, "Bass": 3}
-    for i in range(len(data)):
-        for j in range(len(data[i])):
-            if data[i][j][0] in voice_mapping:
-                data[i][j][0] = voice_mapping[data[i][j][0]]
-            if data[i][j][1] in ["START", "END"]:
-                data[i][j][1] = -1 if data[i][j][1] == "START" else -2
-            for x in range(len(data[i][j])):
-                data[i][j][x] = float(data[i][j][x]) if data[i][j][x] is not None else 0.0
-
-    from keras.preprocessing.sequence import pad_sequences
-    # Pad all sequences (data[i]) to the same length
-    data = pad_sequences(data, padding="post", dtype=np.float32)
-    vocab = np.array(data, dtype=np.float32)
-
-    scaler = MinMaxScaler(feature_range=(0, 1))  # Normalization
-    scaled_data = scaler.fit_transform(np.array(vocab).reshape(-1, 1))
-    vocab = scaled_data.reshape(data.shape)
-    # Get the vocab size from each token (data[i][j]) as the max value in each token
-    vocab_size = [int(np.max(vocab[:, :, i])) + 1 for i in range(vocab.shape[-1])]
-    # vocab_size = int(np.max(vocab)) + 1
-
-    # Save vocabulary and scaler
-    with open(f"Weights/Composition/Choral_vocab.pkl", "wb") as f:
-        pkl.dump(vocab, f)
-    with open(f"Weights/Composition/Choral_scaler.pkl", "wb") as f:
-        pkl.dump(scaler, f)
-
-    # seq_ds, vectorize_layer, vocab = create_transformer_dataset(vocab, BATCH_SIZE)
-
-    def prepare_inputs(tokens):
-        x = tokens[:, :-1]
-        y = tokens[:, 1:]
-        return x, y
-
-    ds = tf.data.Dataset.from_tensor_slices(vocab).map(prepare_inputs).batch(BATCH_SIZE, drop_remainder=True).shuffle(1000)
-    # ds = (tf.data.Dataset.from_tensor_slices(vocab).batch(BATCH_SIZE, drop_remainder=True).shuffle(1000))
-    # No need for text vectorization layer if the dataset is numeric
-
-    # Build and potentially load the model
-    print(vocab.shape)
-    print(vocab_size)
-    # Print ds shape
-    for x, y in ds:
-        print(x.shape)
-        print(y.shape)
-        break
-
-    model = build_choral_model(vocab_size, embedding_dim=256, feed_forward_dim=256, num_heads=5,
-                               dropout_rate=0.3, verbose=True)
-
-    if LOAD_MODEL:
-        model.load_weights(f"Weights/Composition/Choral/checkpoint.ckpt")
-        print("Loaded model weights")
-
-    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/Choral/checkpoint.ckpt",
-                                                    save_weights_only=True, save_freq="epoch", verbose=0)
-    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/Choral")
-
-    # Tokenize starting prompt and generate music during training.
-    music_generator = MusicGenerator2(vocab, scaler=scaler, generate_len=GENERATE_LEN)
-    model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator])
-    model.save(f"Weights/Composition/Choral.keras")
-
-    # Test the model
-    info = music_generator.generate([0, -1, None, None, 0], max_tokens=50, temperature=0.5)
-    midi_stream = info[-1]["midi"].chordify()
-    timestr = time.strftime("%Y%m%d-%H%M%S")
-    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Choral", "output-" + timestr + ".mid"))
-
-
-# endregion
-
-
 def generate_composition_bpe():
     """Generates a composition using the MusicBPE Transformer model."""
     config = {}
@@ -948,9 +843,9 @@ if __name__ == '__main__':
     # train_choral_composition_model(epochs=9)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
     # generate_composition_bpe()
-    train_choral_transformer(epochs=100)
+    #train_choral_transformer(epochs=100)
 
     # key, time_sig, tempo = None, None, None
     # key, time_sig, tempo = "D-:major", "3/4TS", 120

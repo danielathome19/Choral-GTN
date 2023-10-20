@@ -25,8 +25,8 @@ if __name__ == "__main__":
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Loss vs. Epoch")
-    plt.ylim(0, 6.5)
-    for i in range(0, len(loss), 50):
+    plt.ylim(0, 9)  # 6.5
+    for i in range(0, len(loss), 10):  # 50
         if i == 0:
             i += 1
         plt.text(i, loss[i], "{:.2f}".format(loss[i]), ha="center", va="bottom", fontsize=8)

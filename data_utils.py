@@ -153,7 +153,7 @@ def create_all_datasets():
 
 # region VoiceTransformer
 def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, limit=None, mm_limit=0):
-    all_voices_data = {'Soprano': [], 'Alto': [], 'Tenor': [], 'Bass': []}
+    all_voices_data = {'S': [], 'A': [], 'T': [], 'B': []}
 
     if limit is not None:
         file_list = file_list[:limit]
@@ -800,7 +800,12 @@ if __name__ == "__main__":
     """
     # load_pickle_from_slices("Data/Glob/Combined/Combined_notes", True)
     # load_pickle_from_slices("Data/Glob/Combined/Combined_durations", True)
-    # glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_choral/Combined_", choral=True)
+    glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_choral/Combined_", choral=True)
+    for i in range(1, 5):
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_1", "Data/Glob/Combined_choral/Combined_aug1_")
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_2", "Data/Glob/Combined_choral/Combined_aug2_")
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_choral/Combined_aug3_")
+        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_choral/Combined_aug4_")
     # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=5)
     #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=5)
