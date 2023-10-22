@@ -11,15 +11,15 @@ from Transformer import *
 from keras import layers
 from keras import losses
 from keras import backend as k
-from keras.src.utils import plot_model
+from keras.regularizers import l2
+from keras.optimizers import Adam
 from keras.models import Sequential
+from keras.src.utils import plot_model
+from keras.callbacks import EarlyStopping
 from data_utils import key_signature_to_number
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from fairseq.models import FairseqLanguageModel
-from musicbpe_preprocessing import note_seq_to_midi_file
-from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, get_note_seq, music_dict
 
 
 tf.get_logger().setLevel(logging.ERROR)
@@ -34,44 +34,6 @@ for gpu in gpus:
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-
-def generate_composition_bpe():
-    """Generates a composition using the MusicBPE Transformer model."""
-    config = {}
-    with open("config.sh", "r") as f:
-        for line in f:
-            name, value = line.strip().split('=')
-            config[name] = value
-    MAX_POS_LEN = 4096
-    IGNORE_META_LOSS = 1
-    BPE = "_bpe"  # or ""
-    DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
-    DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
-    DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
-    music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
-    custom_lm = FairseqLanguageModel.from_pretrained('.', checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
-                                                     data_name_or_path=DATA_BIN_DIR, user_dir="Model")
-    model = custom_lm.models[0]
-    model.cuda()
-    model.eval()
-    prime_midi_name = 'Data/Generated/test_prime.mid'
-    max_measure_cnt = 9
-    max_chord_measure_cnt = 0
-    prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
-    while True:
-        try:
-            generated, ins_logits = gen_one(model, prime, MIN_LEN=100)  # 1024
-            break
-        except Exception as e:
-            print(e)
-            continue
-    trk_ins_map = get_trk_ins_map(generated, ins_logits)  # Need to limit to 4 tracks
-    note_seq = get_note_seq(generated, trk_ins_map, assert_valid=False)
-    timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
-    output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"
-    note_seq_to_midi_file(note_seq, output_name)
-    pass
 
 
 def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
@@ -136,177 +98,78 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
     pass
 
 
-def generate_intro(dataset="Soprano", generate_len=50, temperature=0.5, key=None,
-                   time_sig=None, tempo: int = None, entrance: float = None):
-    with open(f"Weights/Composition_Intro/{dataset}_notes_vocab.pkl", "rb") as f:
-        notes_vocab = pkl.load(f)
-    with open(f"Weights/Composition_Intro/{dataset}_durations_vocab.pkl", "rb") as f:
-        durations_vocab = pkl.load(f)
-
-    key, time_sig, tempo, entrance = validate_and_generate_metatrack(dataset, key, time_sig, tempo, entrance)
-    start_tokens = [f"START", key, time_sig, tempo, "rest"]
-    start_durations = ["0.0", "0.0", "0.0", "0.0", str(entrance)]
-    print(f"Generating {dataset} intro with key={key}, time_sig={time_sig}, tempo={tempo}, entrance={entrance}...")
-    while True:
-        try:
-            model = build_model(len(notes_vocab), len(durations_vocab),
-                                feed_forward_dim=512, num_heads=8, verbose=False)
-            model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
-            music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
-            clef = "treble" if dataset in ["Soprano", "Alto"] else dataset.lower()
-            info = music_generator.generate(start_tokens, start_durations, max_tokens=generate_len, clef=clef,
-                                            temperature=temperature, model=model, intro=True, instrument=dataset)
-            midi_stream = info[-1]["midi"]
-            timestr = time.strftime("%Y%m%d-%H%M%S")
-            output_dir = f"Data/Generated/Intro_{dataset}"
-            if not os.path.exists(output_dir):
-                os.mkdir(output_dir)
-            filename = os.path.join(output_dir, "output-" + timestr + ".mid")
-            midi_stream.write("midi", fp=filename)
-            # Check the output MIDI file -- if it's less than 250 bytes, it's probably junk; retry
-            if os.path.getsize(filename) < 250:
-                os.remove(filename)
-                # print(f"Failed to generate intro for {dataset}; retrying...")
-            else:
-                break
-        except Exception as e:
-            print(e)
-    print(f"Generated intro for {dataset}\n")
-    return key, time_sig, tempo, entrance, filename
-
-
 def build_model(notes_vocab_size, durations_vocab_size,
-                embedding_dim=256, feed_forward_dim=256, num_heads=5, key_dim=256, dropout_rate=0.3, verbose=True):
+                embedding_dim=256, feed_forward_dim=256, num_heads=5, key_dim=256, dropout_rate=0.3, l2_reg=1e-4,
+                num_transformer_blocks=2, verbose=True):
     note_inputs = layers.Input(shape=(None,), dtype=tf.int32)
     duration_inputs = layers.Input(shape=(None,), dtype=tf.int32)
-    note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, embedding_dim // 2)(note_inputs)
-    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, embedding_dim // 2)(duration_inputs)
+    # note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, embedding_dim // 2)(note_inputs)
+    # duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, embedding_dim // 2)(duration_inputs)
+    note_embeddings = TokenAndPositionEmbedding(notes_vocab_size, embedding_dim // 2, l2_reg=l2_reg)(note_inputs)
+    duration_embeddings = TokenAndPositionEmbedding(durations_vocab_size, embedding_dim // 2,
+                                                    l2_reg=l2_reg)(duration_inputs)
     embeddings = layers.Concatenate()([note_embeddings, duration_embeddings])
-    x, attention_scores = TransformerBlock(name="attention", embed_dim=embedding_dim, ff_dim=feed_forward_dim,
-                                           num_heads=num_heads, key_dim=key_dim, dropout_rate=dropout_rate)(embeddings)
-    note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)  # Attention scores
-    duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
+    # x = layers.Dropout(dropout_rate)(embeddings)
+    x = embeddings
+    for i in range(num_transformer_blocks):
+        x, _ = TransformerBlock(name=f"attention_{i+1}", embed_dim=embedding_dim, ff_dim=feed_forward_dim,
+                                num_heads=num_heads, key_dim=key_dim, dropout_rate=dropout_rate)(x)
+    # note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)
+    # duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
+    note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs",
+                                kernel_regularizer=l2(l2_reg))(x)
+    duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs",
+                                    kernel_regularizer=l2(l2_reg))(x)
     model = models.Model(inputs=[note_inputs, duration_inputs], outputs=[note_outputs, duration_outputs])
-    model.compile("adam", loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
+    lr_schedule = NoamSchedule(embedding_dim)
+    optimizer = Adam(learning_rate=lr_schedule)
+    model.compile(optimizer, loss=[losses.SparseCategoricalCrossentropy(), losses.SparseCategoricalCrossentropy()])
     if verbose:
         model.summary()
     return model
 
 
-def train_intro_model(dataset="Soprano", epochs=100):
-    """Trains a Transformer model to generate the first 8 measures of the specified voice part."""
-    PARSED_DATA_PATH = f"Data/Glob/Combined_mm1-8/Combined_{dataset}_choral_"
-    INCLUDE_AUGMENTED = True
-    BATCH_SIZE = 128
-    DATASET_REPETITIONS = 1
-    LOAD_MODEL = True
-    GENERATE_LEN = 50
-
-    # Load the parsed data
-    notes, durations = load_parsed_files(PARSED_DATA_PATH)
-    if INCLUDE_AUGMENTED:
-        for i in range(1, 5):
-            aug_path = f"Data/Glob/Combined_mm1-8/Combined_aug{i}_{dataset}_choral_"
-            aug_notes, aug_durations = load_parsed_files(aug_path)
-            notes += aug_notes
-            durations += aug_durations
-
-    # For every string in the notes and durations lists, remove all instances of "{dataset}:"
-    notes = [note.replace(f"{dataset}:", "") for note in notes]
-    durations = [duration.replace(f"{dataset}:", "") for duration in durations]
-
-    notes_seq_ds, notes_vectorize_layer, notes_vocab = create_transformer_dataset(notes, BATCH_SIZE)
-    durations_seq_ds, durations_vectorize_layer, durations_vocab = create_transformer_dataset(durations, BATCH_SIZE)
-    seq_ds = tf.data.Dataset.zip((notes_seq_ds, durations_seq_ds))
-
-    notes_vocab_size = len(notes_vocab)
-    durations_vocab_size = len(durations_vocab)
-
-    # Save vocabularies
-    if not os.path.exists(f"Weights/Composition_Intro"):
-        os.mkdir(f"Weights/Composition_Intro")
-    with open(f"Weights/Composition_Intro/{dataset}_notes_vocab.pkl", "wb") as f:
-        pkl.dump(notes_vocab, f)
-    with open(f"Weights/Composition_Intro/{dataset}_durations_vocab.pkl", "wb") as f:
-        pkl.dump(durations_vocab, f)
-
-    # Create the training set of sequences and the same sequences shifted by one note
-    def prepare_inputs(notes, durations):
-        notes = tf.expand_dims(notes, -1)
-        durations = tf.expand_dims(durations, -1)
-        tokenized_notes = notes_vectorize_layer(notes)
-        tokenized_durations = durations_vectorize_layer(durations)
-        x = (tokenized_notes[:, :-1], tokenized_durations[:, :-1])
-        y = (tokenized_notes[:, 1:], tokenized_durations[:, 1:])
-        return x, y
-
-    ds = seq_ds.map(prepare_inputs).repeat(DATASET_REPETITIONS)
-
-    gc.collect()
-    model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
-    plot_model(model, to_file=f'Images/{dataset}_intro_model.png',
-               show_shapes=True, show_layer_names=True, expand_nested=True)
-
-    if LOAD_MODEL:
-        model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
-        print("Loaded model weights")
-
-    class ClearGarbage(callbacks.Callback):
-        def on_epoch_end(self, epoch, logs=None):
-            gc.collect()
-            k.clear_session()
-
-    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt",
-                                                    save_weights_only=True, save_freq="epoch", verbose=0)
-    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/Intro_{dataset}")
-
-    # Tokenize starting prompt
-    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
-    model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator, ClearGarbage()])
-    model.save(f"Weights/Composition_Intro/{dataset}.keras")
-
-    # Test the model
-    info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
-    midi_stream = info[-1]["midi"]
-    timestr = time.strftime("%Y%m%d-%H%M%S")
-    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Intro_{dataset}", "output-" + timestr + ".mid"))
-
-
 def train_choral_composition_model(epochs=100):
     """Trains a choral Transformer model to generate notes and times."""
-    dataset = "Combined"
-    LOAD_MODEL = True
-    DATASET_REPETITIONS = 1
-    BATCH_SIZE = 256
+    BATCH_SIZE = 128
+    # DATASET_REPETITIONS = 2
     GENERATE_LEN = 5
+    INCLUDE_AUGMENTED = True
+    DATAPATH = "Data/Glob/Combined_choral"
+    VALIDATION_SPLIT = 0.1
+    WEIGHT_DECAY = 1e-4
 
     def merge_voice_parts(voice_parts_notes, voice_parts_durations):
         merged_notes = []
         merged_durations = []
-        # min_length = min([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
-        # for voice in voice_parts_notes:
-        #     voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
-        #     voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
-        max_len = max([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
+        min_length = min([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
         for voice in voice_parts_notes:
-            cur_len = len(voice_parts_notes[voice])
-            voice_parts_notes[voice] = voice_parts_notes[voice] + voice_parts_notes[voice][:max_len-cur_len]
-            voice_parts_durations[voice] = voice_parts_durations[voice] + voice_parts_durations[voice][:max_len-cur_len]
-        for idx in range(len(voice_parts_notes["Soprano"])):
+            voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
+            voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
+        # max_len = max([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
+        # for voice in voice_parts_notes:
+        #   cur_len = len(voice_parts_notes[voice])
+        #   voice_parts_notes[voice] = voice_parts_notes[voice] + voice_parts_notes[voice][:max_len-cur_len]
+        #   voice_parts_durations[voice] = voice_parts_durations[voice] + voice_parts_durations[voice][:max_len-cur_len]
+        for idx in range(len(voice_parts_notes["S"])):
             note_str = " ".join([voice_parts_notes[voice][idx] for voice in voice_parts_notes])
             duration_str = " ".join([voice_parts_durations[voice][idx] for voice in voice_parts_durations])
             merged_notes.append(note_str)
             merged_durations.append(duration_str)
         return merged_notes, merged_durations
 
-    voices = ["Soprano", "Alto", "Tenor", "Bass"]
+    voices = ["S", "A", "T", "B"]
     voice_parts_notes = {}
     voice_parts_durations = {}
     for voice in voices:
-        voice_parts_notes[voice] = \
-            load_pickle_from_slices(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes", False)
-        voice_parts_durations[voice] = \
-            load_pickle_from_slices(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations", False)
+        voice_parts_notes[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_notes", False)
+        voice_parts_durations[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_durations", False)
+        if INCLUDE_AUGMENTED:
+            for i in range(1, 5):
+                aug_notes = load_pickle_from_slices(f"{DATAPATH}/Combined_aug{i}_{voice}_choral_notes", False)
+                aug_dur = load_pickle_from_slices(f"{DATAPATH}/Combined_aug{i}_{voice}_choral_durations", False)
+                voice_parts_notes[voice] += aug_notes
+                voice_parts_durations[voice] += aug_dur
 
     notes, durations = merge_voice_parts(voice_parts_notes, voice_parts_durations)
     notes_seq_ds, notes_vectorize_layer, notes_vocab = create_transformer_dataset(notes, BATCH_SIZE)
@@ -317,9 +180,9 @@ def train_choral_composition_model(epochs=100):
     durations_vocab_size = len(durations_vocab)
 
     # Save vocabularies
-    with open(f"Weights/Composition/{dataset}_choral_notes_vocab.pkl", "wb") as f:
+    with open(f"Weights/Composition_Choral/Combined_choral_notes_vocab.pkl", "wb") as f:
         pkl.dump(notes_vocab, f)
-    with open(f"Weights/Composition/{dataset}_choral_durations_vocab.pkl", "wb") as f:
+    with open(f"Weights/Composition_Choral/Combined_choral_durations_vocab.pkl", "wb") as f:
         pkl.dump(durations_vocab, f)
 
     # Create the training set of sequences and the same sequences shifted by one note
@@ -332,37 +195,46 @@ def train_choral_composition_model(epochs=100):
         y = (tokenized_notes[:, 1:], tokenized_durations[:, 1:])
         return x, y
 
-    ds = seq_ds.map(prepare_inputs).repeat(DATASET_REPETITIONS)
+    ds = seq_ds.map(prepare_inputs).shuffle(1024)  # .batch(BATCH_SIZE)
+
+    # Splitting dataset into training and validation
+    ds_size = ds.cardinality().numpy()
+    train_size = int((1 - VALIDATION_SPLIT) * ds_size)
+    train_ds = ds.take(train_size)
+    val_ds = ds.skip(train_size)
 
     gc.collect()
-    model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
-    plot_model(model, to_file=f'Images/{dataset}_choral_composition_model.png',
+    # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
+    model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2)
+    plot_model(model, to_file=f'Images/Combined_choral_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
+    LOAD_MODEL = True
     if LOAD_MODEL:
-        model.load_weights(f"Weights/Composition/{dataset}_choral/checkpoint.ckpt")
+        model.load_weights(f"Weights/Composition_Choral/checkpoint.ckpt")
         print("Loaded model weights")
 
-    class ClearGarbage(callbacks.Callback):
-        def on_epoch_end(self, epoch, logs=None):
-            gc.collect()
-            k.clear_session()
-
-    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition/{dataset}_choral/checkpoint.ckpt",
+    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition_Choral/checkpoint.ckpt",
                                                     save_weights_only=True, save_freq="epoch", verbose=0)
-    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/{dataset}")
+    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/Combined_Choral")
+    early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN, choral=True)
-    model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator, ClearGarbage()])
-    model.save(f"Weights/Composition/{dataset}_choral.keras")
+
+    # Train the model
+    model.fit(train_ds, validation_data=val_ds, epochs=epochs,
+              callbacks=[checkpoint_callback, early_stopping, tensorboard_callback, music_generator])
+
+    model.save(f"Weights/Composition_Choral/Combined_choral.keras")
 
     # Test the model
-    start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START"]
+    start_notes = ["S:START", "A:START", "T:START", "B:START"]
     start_durations = ["0.0", "0.0", "0.0", "0.0"]
     info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=50, temperature=0.5)
     timestr = time.strftime("%Y%m%d-%H%M%S")
-    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/{dataset}_choral", "output-" + timestr + ".mid"))
+    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Combined_choral", "output-" + timestr + ".mid"))
 
     pass
 
@@ -538,6 +410,165 @@ def train_composition_model(dataset="Soprano", epochs=100, load_augmented_datase
         plt.show()
 
         pass
+
+
+# def generate_composition_bpe():
+#     """Generates a composition using the MusicBPE Transformer model."""
+#     from fairseq.models import FairseqLanguageModel
+#     from musicbpe_preprocessing import note_seq_to_midi_file
+#     from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, get_note_seq, music_dict
+#     config = {}
+#     with open("config.sh", "r") as f:
+#         for line in f:
+#             name, value = line.strip().split('=')
+#             config[name] = value
+#     MAX_POS_LEN = 4096
+#     IGNORE_META_LOSS = 1
+#     BPE = "_bpe"  # or ""
+#     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
+#     DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
+#     DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
+#     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
+#     custom_lm = FairseqLanguageModel.from_pretrained('.', checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
+#                                                      data_name_or_path=DATA_BIN_DIR, user_dir="Model")
+#     model = custom_lm.models[0]
+#     model.cuda()
+#     model.eval()
+#     prime_midi_name = 'Data/Generated/test_prime.mid'
+#     max_measure_cnt = 9
+#     max_chord_measure_cnt = 0
+#     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
+#     while True:
+#         try:
+#             generated, ins_logits = gen_one(model, prime, MIN_LEN=100)  # 1024
+#             break
+#         except Exception as e:
+#             print(e)
+#             continue
+#     trk_ins_map = get_trk_ins_map(generated, ins_logits)  # Need to limit to 4 tracks
+#     note_seq = get_note_seq(generated, trk_ins_map, assert_valid=False)
+#     timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
+#     output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"
+#     note_seq_to_midi_file(note_seq, output_name)
+#     pass
+
+
+def generate_intro(dataset="Soprano", generate_len=50, temperature=0.5, key=None,
+                   time_sig=None, tempo: int = None, entrance: float = None):
+    with open(f"Weights/Composition_Intro/{dataset}_notes_vocab.pkl", "rb") as f:
+        notes_vocab = pkl.load(f)
+    with open(f"Weights/Composition_Intro/{dataset}_durations_vocab.pkl", "rb") as f:
+        durations_vocab = pkl.load(f)
+
+    key, time_sig, tempo, entrance = validate_and_generate_metatrack(dataset, key, time_sig, tempo, entrance)
+    start_tokens = [f"START", key, time_sig, tempo, "rest"]
+    start_durations = ["0.0", "0.0", "0.0", "0.0", str(entrance)]
+    print(f"Generating {dataset} intro with key={key}, time_sig={time_sig}, tempo={tempo}, entrance={entrance}...")
+    while True:
+        try:
+            model = build_model(len(notes_vocab), len(durations_vocab),
+                                feed_forward_dim=512, num_heads=8, verbose=False)
+            model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
+            music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len)
+            clef = "treble" if dataset in ["Soprano", "Alto"] else dataset.lower()
+            info = music_generator.generate(start_tokens, start_durations, max_tokens=generate_len, clef=clef,
+                                            temperature=temperature, model=model, intro=True, instrument=dataset)
+            midi_stream = info[-1]["midi"]
+            timestr = time.strftime("%Y%m%d-%H%M%S")
+            output_dir = f"Data/Generated/Intro_{dataset}"
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
+            filename = os.path.join(output_dir, "output-" + timestr + ".mid")
+            midi_stream.write("midi", fp=filename)
+            # Check the output MIDI file -- if it's less than 250 bytes, it's probably junk; retry
+            if os.path.getsize(filename) < 250:
+                os.remove(filename)
+                # print(f"Failed to generate intro for {dataset}; retrying...")
+            else:
+                break
+        except Exception as e:
+            print(e)
+    print(f"Generated intro for {dataset}\n")
+    return key, time_sig, tempo, entrance, filename
+
+
+def train_intro_model(dataset="Soprano", epochs=100):
+    """Trains a Transformer model to generate the first 8 measures of the specified voice part."""
+    PARSED_DATA_PATH = f"Data/Glob/Combined_mm1-8/Combined_{dataset}_choral_"
+    INCLUDE_AUGMENTED = True
+    BATCH_SIZE = 128
+    DATASET_REPETITIONS = 1
+    LOAD_MODEL = True
+    GENERATE_LEN = 50
+
+    # Load the parsed data
+    notes, durations = load_parsed_files(PARSED_DATA_PATH)
+    if INCLUDE_AUGMENTED:
+        for i in range(1, 5):
+            aug_path = f"Data/Glob/Combined_mm1-8/Combined_aug{i}_{dataset}_choral_"
+            aug_notes, aug_durations = load_parsed_files(aug_path)
+            notes += aug_notes
+            durations += aug_durations
+
+    # For every string in the notes and durations lists, remove all instances of "{dataset}:"
+    notes = [note.replace(f"{dataset}:", "") for note in notes]
+    durations = [duration.replace(f"{dataset}:", "") for duration in durations]
+
+    notes_seq_ds, notes_vectorize_layer, notes_vocab = create_transformer_dataset(notes, BATCH_SIZE)
+    durations_seq_ds, durations_vectorize_layer, durations_vocab = create_transformer_dataset(durations, BATCH_SIZE)
+    seq_ds = tf.data.Dataset.zip((notes_seq_ds, durations_seq_ds))
+
+    notes_vocab_size = len(notes_vocab)
+    durations_vocab_size = len(durations_vocab)
+
+    # Save vocabularies
+    if not os.path.exists(f"Weights/Composition_Intro"):
+        os.mkdir(f"Weights/Composition_Intro")
+    with open(f"Weights/Composition_Intro/{dataset}_notes_vocab.pkl", "wb") as f:
+        pkl.dump(notes_vocab, f)
+    with open(f"Weights/Composition_Intro/{dataset}_durations_vocab.pkl", "wb") as f:
+        pkl.dump(durations_vocab, f)
+
+    # Create the training set of sequences and the same sequences shifted by one note
+    def prepare_inputs(notes, durations):
+        notes = tf.expand_dims(notes, -1)
+        durations = tf.expand_dims(durations, -1)
+        tokenized_notes = notes_vectorize_layer(notes)
+        tokenized_durations = durations_vectorize_layer(durations)
+        x = (tokenized_notes[:, :-1], tokenized_durations[:, :-1])
+        y = (tokenized_notes[:, 1:], tokenized_durations[:, 1:])
+        return x, y
+
+    ds = seq_ds.map(prepare_inputs).repeat(DATASET_REPETITIONS)
+
+    gc.collect()
+    model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
+    plot_model(model, to_file=f'Images/{dataset}_intro_model.png',
+               show_shapes=True, show_layer_names=True, expand_nested=True)
+
+    if LOAD_MODEL:
+        model.load_weights(f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt")
+        print("Loaded model weights")
+
+    class ClearGarbage(callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            gc.collect()
+            k.clear_session()
+
+    checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition_Intro/{dataset}/checkpoint.ckpt",
+                                                    save_weights_only=True, save_freq="epoch", verbose=0)
+    tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/Intro_{dataset}")
+
+    # Tokenize starting prompt
+    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN)
+    model.fit(ds, epochs=epochs, callbacks=[checkpoint_callback, tensorboard_callback, music_generator, ClearGarbage()])
+    model.save(f"Weights/Composition_Intro/{dataset}.keras")
+
+    # Test the model
+    info = music_generator.generate(["START"], ["0.0"], max_tokens=50, temperature=0.5)
+    midi_stream = info[-1]["midi"]
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Intro_{dataset}", "output-" + timestr + ".mid"))
 
 
 # region FeatureModels
@@ -840,12 +871,12 @@ if __name__ == '__main__':
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
     # train_composition_model("Soprano", epochs=50)
-    # train_choral_composition_model(epochs=9)
+    train_choral_composition_model(epochs=5)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
     # generate_composition_bpe()
-    #train_choral_transformer(epochs=100)
+    # train_choral_transformer(epochs=100)
 
     # key, time_sig, tempo = None, None, None
     # key, time_sig, tempo = "D-:major", "3/4TS", 120

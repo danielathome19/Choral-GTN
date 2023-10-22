@@ -161,7 +161,11 @@ def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, v
     for i, file in enumerate(file_list):
         if verbose:
             print(i + 1, "Parsing %s" % file)
-        score = parser.parse(file)
+        try:
+            score = parser.parse(file)
+        except Exception as e:
+            print(f"\tError parsing file {file}: {e}")
+            continue
         for part, voice in zip(score.parts, all_voices_data.keys()):
             notes = ["START"]
             durations = ["0.0"]
@@ -208,7 +212,7 @@ def get_choral_midi_note(sample_token, sample_duration):
     new_note = None
     voice_type, sample_note = sample_token.split(":")[0], ":".join(sample_token.split(":")[1:])
     if "BPM" in sample_token:
-        new_note = music21.tempo.MetronomeMark(number=int(sample_token.split("BPM")[0]))
+        new_note = music21.tempo.MetronomeMark(number=int(round(float(sample_token.split("BPM")[0]))))
     elif "TS" in sample_token:
         new_note = music21.meter.TimeSignature(sample_token.split("TS")[0])
     elif "major" in sample_note or "minor" in sample_note:
@@ -588,17 +592,16 @@ def augment_midi_files(path):
     pass
 
 
-def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False, measure_limit=0):
-    SEQ_LEN = 50
+def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False, measure_limit=0, seq_len=50):
     POLYPHONIC = True
     file_list = glob.glob(path + "/*.mid")
     parser = music21.converter
     print(f"Parsing {len(file_list)} midi files...")
     if not choral:
-        _, _ = parse_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
+        _, _ = parse_midi_files(file_list, parser, seq_len + 1, output_path + suffix,
                                 verbose=True, enable_chords=POLYPHONIC, limit=None)
     else:
-        _ = parse_choral_midi_files(file_list, parser, SEQ_LEN + 1, output_path + suffix,
+        _ = parse_choral_midi_files(file_list, parser, seq_len + 1, output_path + suffix,
                                     verbose=True, limit=None, mm_limit=measure_limit)
     print("Complete!")
 
@@ -656,7 +659,7 @@ def extract_and_encode_midi(file_path, seq_len=-1, parsed_data_path=None, verbos
     if limit is not None:
         file_list = file_list[:limit]
 
-    all_midi_data = []  # To store data from all MIDI files
+    all_midi_data = []
 
     for j, file in enumerate(file_list):
         if verbose:
@@ -672,7 +675,6 @@ def extract_and_encode_midi(file_path, seq_len=-1, parsed_data_path=None, verbos
                 # else:  # If part name is not recognizable, skip it
                 #     continue
 
-                # Initialize offset counter
                 offset_counter = 0
                 interleaved_data['events'].append([voice, 'START', None, None, 0])
 
@@ -687,30 +689,19 @@ def extract_and_encode_midi(file_path, seq_len=-1, parsed_data_path=None, verbos
                         for meta_element in part.flat.getElementsByOffset(offset_counter, element.offset,
                                                                           classList=['TimeSignature', 'KeySignature',
                                                                                      'MetronomeMark']):
-                            # Time signature encoding
                             if isinstance(meta_element, music21.meter.TimeSignature):
                                 time_signature = meta_element.numerator / meta_element.denominator
                                 interleaved_data['events'].append([voice, 4, time_signature, 0.0, offset_counter])
-
-                            # Key signature encoding
                             elif isinstance(meta_element, music21.key.KeySignature):
                                 interleaved_data['events'].append([voice, 2, meta_element.sharps, 0.0, offset_counter])
-
-                            # Tempo encoding
                             elif isinstance(meta_element, music21.tempo.MetronomeMark):
                                 interleaved_data['events'].append([voice, 3, meta_element.number, 0.0, offset_counter])
-
-                        # Update offset counter
                         offset_counter = element.offset
-
-                    # Note and rest encoding
                     if element.isNote:
                         interleaved_data['events'].append(
                             [voice, 1, element.pitch.midi, element.quarterLength, offset_counter])
                     elif element.isRest:
                         interleaved_data['events'].append([voice, 0, 0, element.quarterLength, offset_counter])
-
-                    # Update offset counter
                     offset_counter += element.quarterLength
                 # interleaved_data['events'].append([voice, 'END', None, None, 0])
 
@@ -728,7 +719,6 @@ def extract_and_encode_midi(file_path, seq_len=-1, parsed_data_path=None, verbos
         except Exception as e:
             print(f"\tError parsing file {file}: {e}")
 
-    # Save all data to a pickle file
     if parsed_data_path is not None:
         with open(parsed_data_path, 'wb') as handle:
             pkl.dump(all_midi_data, handle, protocol=pkl.HIGHEST_PROTOCOL)
@@ -791,24 +781,24 @@ if __name__ == "__main__":
     # slice_pickle("Data/Glob/Combined/Combined_durations.pkl", slices=5)
     """
     for i in range(1, 5):
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_1", "Data/Glob/Combined/Combined_aug1_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_2", "Data/Glob/Combined/Combined_aug2_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined/Combined_aug3_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined/Combined_aug4_")
+        glob_midis(f"Data/MIDI/VoiceParts/Combined/Augment_{i}", "Data/Glob/Combined/Combined_aug{i}_")
+    for i in range(1, 5):
         slice_pickle(f"Data/Glob/Combined/Combined_aug{i}_notes.pkl")
         slice_pickle(f"Data/Glob/Combined/Combined_aug{i}_durations.pkl")
     """
     # load_pickle_from_slices("Data/Glob/Combined/Combined_notes", True)
     # load_pickle_from_slices("Data/Glob/Combined/Combined_durations", True)
-    glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_choral/Combined_", choral=True)
-    for i in range(1, 5):
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_1", "Data/Glob/Combined_choral/Combined_aug1_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_2", "Data/Glob/Combined_choral/Combined_aug2_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_choral/Combined_aug3_")
-        glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_choral/Combined_aug4_")
-    # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
-    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=5)
-    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=5)
+    # glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_choral/Combined_", choral=True)
+    # for i in range(1, 5):
+    #     print("Parsing augmented dataset", i)
+    #     glob_midis(f"Data/MIDI/VoiceParts/Combined/Augment_{i}",
+    #                f"Data/Glob/Combined_choral/Combined_aug{i}_", choral=True)
+    # for voice in ["S", "A", "T", "B"]:
+    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_notes.pkl", slices=3)
+    #     slice_pickle(f"Data/Glob/Combined_choral/Combined_{voice}_choral_durations.pkl", slices=2)
+    #     for i in range(1, 5):
+    #         slice_pickle(f"Data/Glob/Combined_choral/Combined_aug{i}_{voice}_choral_notes.pkl", slices=3)
+    #         slice_pickle(f"Data/Glob/Combined_choral/Combined_aug{i}_{voice}_choral_durations.pkl", slices=2)
     """
     glob_midis("Data/MIDI/VoiceParts/Combined", "Data/Glob/Combined_mm1-8/Combined_", choral=True, measure_limit=8)
     for i in range(1, 5):
@@ -821,6 +811,6 @@ if __name__ == "__main__":
     #     meta_analysis(voice)
     # view_meta_analysis("Soprano")
     # combine_intros()
-    extract_and_encode_midi("Data/MIDI/VoiceParts/Combined", verbose=True, seq_len=-1,
-                            parsed_data_path="Data/Glob/Choral/Choral.pkl")
+    # extract_and_encode_midi("Data/MIDI/VoiceParts/Combined", verbose=True, seq_len=-1,
+    #                         parsed_data_path="Data/Glob/Choral/Choral.pkl")
     pass

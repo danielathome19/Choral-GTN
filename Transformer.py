@@ -1,6 +1,9 @@
 import music21.clef
+from abc import ABC
 from data_utils import *
+from keras.regularizers import l2
 from keras import layers, callbacks, models
+from keras.optimizers.schedules import LearningRateSchedule
 
 
 def causal_attention_mask(batch_size, n_dest, n_src, dtype):
@@ -41,12 +44,14 @@ class SinePositionEncoding(layers.Layer):
 
 
 class TokenAndPositionEmbedding(layers.Layer):
-    def __init__(self, vocab_size, embed_dim):
+    def __init__(self, vocab_size, embed_dim, l2_reg=1e-4):
         super(TokenAndPositionEmbedding, self).__init__()
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
+        self.l2_reg = l2_reg
         self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim,
-                                          embeddings_initializer="he_uniform")
+                                          embeddings_initializer="he_uniform",
+                                          embeddings_regularizer=l2(self.l2_reg))
         self.pos_emb = SinePositionEncoding()
 
     def call(self, x):
@@ -56,7 +61,7 @@ class TokenAndPositionEmbedding(layers.Layer):
 
     def get_config(self):
         config = super().get_config()
-        config.update({"vocab_size": self.vocab_size, "embed_dim": self.embed_dim,})
+        config.update({"vocab_size": self.vocab_size, "embed_dim": self.embed_dim, "l2_reg": self.l2_reg})
         return config
 
 
@@ -118,25 +123,33 @@ class MusicGenerator(callbacks.Callback):
         self.verbose = verbose
         self.choral = choral
 
-    @staticmethod
-    def sample_from(probs, temperature):
-        probs = probs ** (1 / temperature)
-        probs = probs / np.sum(probs)
-        return np.random.choice(len(probs), p=probs), probs
+    def sample_from(self, probs, temperature):
+        if self.top_k == 0:
+            probs = probs ** (1 / temperature)
+            probs = probs / np.sum(probs)
+            return np.random.choice(len(probs), p=probs), probs
+        sorted_indices = np.argsort(probs)[::-1]
+        top_indices = sorted_indices[:self.top_k]
+        top_probs = probs[top_indices]
+        top_probs = top_probs ** (1 / temperature)
+        top_probs = top_probs / np.sum(top_probs)
+        sampled_index = np.random.choice(top_indices, p=top_probs)
+        return sampled_index, probs
 
     def get_note(self, notes, durations, temperature, instrument=None):
         sample_note_idx = 1
-        while sample_note_idx == 1:
+        # while sample_note_idx == 1:
+        while sample_note_idx == 1 or self.index_to_note[sample_note_idx] == "START":
             sample_note_idx, note_probs = self.sample_from(notes[0][-1], temperature)
             sample_note = self.index_to_note[sample_note_idx]
-
         sample_duration_idx = 1
         while sample_duration_idx == 1:
             sample_duration_idx, duration_probs = self.sample_from(durations[0][-1], temperature)
             sample_duration = self.index_to_duration[sample_duration_idx]
 
         new_note = get_midi_note(sample_note, sample_duration, instrument) if not self.choral else \
-                   get_choral_midi_note(sample_note, sample_duration)
+            get_choral_midi_note(sample_note, sample_duration)
+
         return (
             new_note,
             sample_note_idx,
@@ -147,11 +160,20 @@ class MusicGenerator(callbacks.Callback):
             duration_probs,
         )
 
+    @staticmethod
+    def get_last_attention_layer(model):
+        for layer in reversed(model.layers):
+            if layer.name.startswith("attention"):
+                return layer
+        raise ValueError("No attention layer found in the model.")
+
     def generate(self, start_notes, start_durations, max_tokens, temperature,
                  clef="choral", model=None, intro=False, instrument=None):
         if model is not None:
             self.model = model
-        attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
+        last_attention_layer = self.get_last_attention_layer(self.model)
+        attention_model = models.Model(inputs=self.model.input, outputs=last_attention_layer.output)
+        # attention_model = models.Model(inputs=self.model.input, outputs=self.model.get_layer("attention").output)
         start_note_tokens = [self.note_to_index.get(x, 1) for x in start_notes]
         start_duration_tokens = [self.duration_to_index.get(x, 1) for x in start_durations]
         sample_note = None
@@ -352,3 +374,22 @@ class MusicGenerator(callbacks.Callback):
         if self.verbose:
             print(info[-1]["prompt"])
         midi_stream.write("midi", fp=os.path.join(self.output_path, "output-" + str(epoch+1).zfill(4) + ".mid"))
+
+
+class NoamSchedule(LearningRateSchedule, ABC):
+    def __init__(self, d_model, warmup_steps=4000):
+        super(NoamSchedule, self).__init__()
+        self.d_model = tf.constant(d_model, dtype=tf.float32)
+        self.warmup_steps = tf.constant(warmup_steps, dtype=tf.float32)
+
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        arg1 = tf.math.rsqrt(step)
+        arg2 = step * tf.pow(self.warmup_steps, -1.5)
+        return tf.math.rsqrt(self.d_model) * tf.math.minimum(arg1, arg2)
+
+    def get_config(self):
+        return {
+            'd_model': self.d_model,
+            'warmup_steps': self.warmup_steps
+        }

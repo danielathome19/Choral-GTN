@@ -10,6 +10,9 @@ if __name__ == "__main__":
     loss = [None]
     note_outputs_loss = [None]
     duration_outputs_loss = [None]
+    val_loss = [None]
+    val_note_outputs_loss = [None]
+    val_duration_outputs_loss = [None]
     for i in range(len(lines)):
         if i % 2 == 0:
             continue
@@ -19,9 +22,17 @@ if __name__ == "__main__":
         loss.append(float(split_line[7]))
         note_outputs_loss.append(float(split_line[10]))
         duration_outputs_loss.append(float(split_line[13].strip()))
-    plt.plot(loss, label="loss")
-    plt.plot(note_outputs_loss, label="note_outputs_loss")
-    plt.plot(duration_outputs_loss, label="duration_outputs_loss")
+        if len(split_line) > 16:
+            val_loss.append(float(split_line[16]))
+            val_note_outputs_loss.append(float(split_line[19]))
+            val_duration_outputs_loss.append(float(split_line[22].strip()))
+    plt.plot(loss, label="loss", color='red')
+    plt.plot(note_outputs_loss, label="note_outputs_loss", color='darkorange')
+    plt.plot(duration_outputs_loss, label="duration_outputs_loss", color='gold')
+    if len(val_loss) > 1:
+        plt.plot(val_loss, label="val_loss", color='green')
+        plt.plot(val_note_outputs_loss, label="val_note_outputs_loss", color='blue')
+        plt.plot(val_duration_outputs_loss, label="val_duration_outputs_loss", color='purple')
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Loss vs. Epoch")
