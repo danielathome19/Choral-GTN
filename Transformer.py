@@ -1,5 +1,6 @@
 import music21.clef
 from abc import ABC
+from tqdm import tqdm
 from data_utils import *
 from keras.regularizers import l2
 from keras import layers, callbacks, models
@@ -301,6 +302,7 @@ class MusicGenerator(callbacks.Callback):
                     "atts": [],
                 })
 
+            # for _ in tqdm(range(max_tokens * 4), desc="Generating tokens") if self.verbose else range(max_tokens * 4):
             while len(start_note_tokens) < max_tokens * 4:
                 x1 = np.array([start_note_tokens])
                 x2 = np.array([start_duration_tokens])

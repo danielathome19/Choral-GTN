@@ -50,20 +50,26 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
 
 def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, choral=False,
                          temperature=0.5, key=None, time_sig=None, tempo: int = None):
-    with open(f"Weights/Composition/{dataset}_notes_vocab.pkl", "rb") as f:
+
+    DATAPATH = f"Weights/Composition/{dataset}" if not choral else f"Weights/Composition_Choral"
+    with open(f"{DATAPATH}/{dataset}_notes_vocab.pkl", "rb") as f:
         notes_vocab = pkl.load(f)
-    with open(f"Weights/Composition/{dataset}_durations_vocab.pkl", "rb") as f:
+    with open(f"{DATAPATH}/{dataset}_durations_vocab.pkl", "rb") as f:
         durations_vocab = pkl.load(f)
 
-    model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
-    model.load_weights(f"Weights/Composition/{dataset}/checkpoint.ckpt")
-    music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len, choral=choral)
-    provided_metadata = not (key is None and time_sig is None and tempo is None)
+    # model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
+    model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+                        key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=2)
+    model.load_weights(f"{DATAPATH}/checkpoint.ckpt")
+    music_gen = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len, choral=choral, verbose=True, top_k=30)
+    provided_key = key is not None
+    provided_time_sig = time_sig is not None
+    provided_tempo = tempo is not None
     for i in range(num_to_generate):
         while True:
             if not choral:
-                info = music_generator.generate(["START"], ["0.0"], max_tokens=generate_len,
-                                                temperature=temperature, model=model)
+                info = music_gen.generate(["START"], ["0.0"], max_tokens=generate_len,
+                                          temperature=temperature, model=model)
                 midi_stream = info[-1]["midi"].chordify()
             else:
                 entrances = []
@@ -74,26 +80,34 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
                         key = t_key if key is None else key
                         time_sig = t_time_sig if time_sig is None else time_sig
                         tempo = t_tempo if tempo is None else tempo
+                    tempo = f"{tempo}BPM" if isinstance(tempo, int) else tempo
                 entrances[np.argmin(entrances)] = 0
-                print(f"Generating choral piece with key={key}, time_sig={time_sig}, "
-                      f"tempo={tempo}, entrances={entrances}...")
-                start_notes = ["Soprano:START", "Alto:START", "Tenor:START", "Bass:START", key, time_sig, tempo,
-                               "Soprano:rest", "Alto:rest", "Tenor:rest", "Bass:rest"]
-                start_durations = ["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"] + \
-                                  [str(entrance) for entrance in entrances]
-                info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=generate_len,
-                                                             temperature=temperature, model=model, intro=True)
+                # print(f"Generating choral piece with key={key}, time_sig={time_sig}, "
+                #       f"tempo={tempo}, entrances={entrances}...")
+                print(f"Generating choral piece with tempo={tempo}...")
+                start_notes = ["S:START", "A:START", "T:START", "B:START", tempo]
+                start_durations = ["0.0", "0.0", "0.0", "0.0", "0.0"]
+                # start_notes = ["S:START", "A:START", "T:START", "B:START", key, time_sig, tempo]
+                # "S:rest", "A:rest", "T:rest", "B:rest"]
+                # start_durations = ["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]  # + \
+                # [str(entrance) for entrance in entrances]
+                # start_durations = [str(entrance) for entrance in entrances] + ["0.0", "0.0", "0.0"]
+                info, midi_stream = music_gen.generate(start_notes, start_durations, max_tokens=generate_len,
+                                                       temperature=temperature, model=model, intro=True)
             timestr = time.strftime("%Y%m%d-%H%M%S")
             filename = os.path.join(f"Data/Generated/{dataset}", "output-" + timestr + ".mid")
             midi_stream.write("midi", fp=filename)
             # Check the output MIDI file -- if it's less than 0.25 kB, it's probably empty; retry
-            if os.path.getsize(filename) < 250:
+            if os.path.getsize(filename) < 500:
                 os.remove(filename)
                 print("Failed to generate piece; retrying...")
+                key, time_sig, tempo = None, None, None
             else:
                 break
-        if not provided_metadata:
-            key, time_sig, tempo = None, None, None
+        key = None if not provided_key else key
+        time_sig = None if not provided_time_sig else time_sig
+        tempo = None if not provided_tempo else tempo
+        gc.collect()
         print(f"Generated piece {i+1}/{num_to_generate}")
     pass
 
@@ -179,11 +193,13 @@ def train_choral_composition_model(epochs=100):
     notes_vocab_size = len(notes_vocab)
     durations_vocab_size = len(durations_vocab)
 
-    # Save vocabularies
-    with open(f"Weights/Composition_Choral/Combined_choral_notes_vocab.pkl", "wb") as f:
-        pkl.dump(notes_vocab, f)
-    with open(f"Weights/Composition_Choral/Combined_choral_durations_vocab.pkl", "wb") as f:
-        pkl.dump(durations_vocab, f)
+    # Save vocabularies if they don't exist
+    if not os.path.exists(f"Weights/Composition_Choral/Combined_choral_notes_vocab.pkl"):
+        with open(f"Weights/Composition_Choral/Combined_choral_notes_vocab.pkl", "wb") as f:
+            pkl.dump(notes_vocab, f)
+    if not os.path.exists(f"Weights/Composition_Choral/Combined_choral_durations_vocab.pkl"):
+        with open(f"Weights/Composition_Choral/Combined_choral_durations_vocab.pkl", "wb") as f:
+            pkl.dump(durations_vocab, f)
 
     # Create the training set of sequences and the same sequences shifted by one note
     def prepare_inputs(notes, durations):
@@ -243,14 +259,15 @@ def train_composition_model(dataset="Soprano", epochs=100, load_augmented_datase
     """Trains a Transformer model to generate notes and times."""
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
-    POLYPHONIC = False
-    LOAD_MODEL = True
+    POLYPHONIC = True
+    LOAD_MODEL = False
     PLOT_TEST = False
     INCLUDE_AUGMENTED = load_augmented_dataset
-    DATASET_REPETITIONS = 5
+    DATASET_REPETITIONS = 1  # 5
     SEQ_LEN = 50
     BATCH_SIZE = 256
     GENERATE_LEN = 50
+    WEIGHT_DECAY = 1e-4
 
     if dataset != "Combined":
         file_list = glob.glob(f"Data/MIDI/VoiceParts/{dataset}/Isolated/*.mid")
@@ -338,7 +355,9 @@ def train_composition_model(dataset="Soprano", epochs=100, load_augmented_datase
     plot_embeddings(position_embedding, "Position Embedding")
     plot_embeddings(embedding, "Token + Position Embedding")
 
-    model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
+    # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
+    model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2)
     plot_model(model, to_file=f'Images/{dataset}_composition_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
@@ -871,10 +890,10 @@ if __name__ == '__main__':
     # train_time_signature_model(epochs=10)
     # train_key_model(epochs=10)
     # train_composition_model("Soprano", epochs=50)
-    train_choral_composition_model(epochs=5)
     # train_intro_model(dataset="Tenor", epochs=81)
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
-    # generate_composition("Combined_choral", num_to_generate=3, generate_len=100, choral=True, temperature=0.55)
+    # train_choral_composition_model(epochs=2)
+    generate_composition("Combined_choral", num_to_generate=3, generate_len=200, choral=True, temperature=0.55)
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)
 
