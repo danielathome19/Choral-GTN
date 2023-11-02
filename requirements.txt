@@ -24,6 +24,7 @@ chorder~=0.1.4
 miditoolkit~=0.1.16
 p-tqdm~=1.4.0
 tensorboardX~=2.6.2
+keras-tuner~=1.4.5
 # torch~=2.0.1
 # fairseq~=0.12.2
 # pytorch-fast-transformers~=0.4.0
