@@ -454,7 +454,10 @@ def validate_and_generate_metatrack(dataset="Soprano", key=None, time_sig=None, 
         tempo_max = tempo_max if tempo_max <= 180 else 180 - random.randint(0, int(tempo_mean)//2)
         tempo_probs = np.array([1 / (tempo_mean - tempo_min), 1 / (tempo_max - tempo_mean)])
         tempo_probs = tempo_probs / np.sum(tempo_probs)
-        tempo = f"{int(np.random.choice([tempo_min, tempo_max], p=tempo_probs))}BPM"
+        try:
+            tempo = f"{int(np.random.choice([tempo_min, tempo_max], p=abs(tempo_probs)))}BPM"
+        except Exception as _:
+            tempo = "120BPM"
     else:
         tempo = f"{tempo}BPM"
 
