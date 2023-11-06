@@ -210,22 +210,25 @@ def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, v
 
 def get_choral_midi_note(sample_token, sample_duration):
     new_note = None
-    voice_type, sample_note = sample_token.split(":")[0], ":".join(sample_token.split(":")[1:])
-    if "BPM" in sample_token:
-        new_note = music21.tempo.MetronomeMark(number=int(round(float(sample_token.split("BPM")[0]))))
-    elif "TS" in sample_token:
-        new_note = music21.meter.TimeSignature(sample_token.split("TS")[0])
-    elif "major" in sample_note or "minor" in sample_note:
-        tonic, mode = sample_token.split(":")
-        new_note = music21.key.Key(tonic, mode)
-    elif sample_note == "rest":
-        new_note = music21.note.Rest()
-        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = get_voice_instrument(voice_type)
-    elif sample_note != "START" and sample_note != "END":
-        new_note = music21.note.Note(sample_note)
-        new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
-        new_note.storedInstrument = get_voice_instrument(voice_type)
+    try:
+        voice_type, sample_note = sample_token.split(":")[0], ":".join(sample_token.split(":")[1:])
+        if "BPM" in sample_token:
+            new_note = music21.tempo.MetronomeMark(number=int(round(float(sample_token.split("BPM")[0]))))
+        elif "TS" in sample_token:
+            new_note = music21.meter.TimeSignature(sample_token.split("TS")[0])
+        elif "major" in sample_note or "minor" in sample_note:
+            tonic, mode = sample_token.split(":")
+            new_note = music21.key.Key(tonic, mode)
+        elif sample_note == "rest":
+            new_note = music21.note.Rest()
+            new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
+            new_note.storedInstrument = get_voice_instrument(voice_type)
+        elif sample_note != "START" and sample_note != "END":
+            new_note = music21.note.Note(sample_note)
+            new_note.duration = music21.duration.Duration(float(Fraction(sample_duration)))
+            new_note.storedInstrument = get_voice_instrument(voice_type)
+    except Exception:
+        return None
     return new_note
 
 

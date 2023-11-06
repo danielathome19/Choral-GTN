@@ -14,6 +14,7 @@ from functools import partial
 from keras import backend as k
 from keras.regularizers import l2
 from keras.optimizers import Adam
+from keras.optimizers import AdamW
 from keras.models import Sequential
 from keras_tuner import RandomSearch
 from keras.src.utils import plot_model
@@ -266,9 +267,9 @@ def train_choral_composition_model(epochs=100, suffix=""):
     train_ds = ds.take(train_size)
     val_ds = ds.skip(train_size)
 
-    part_tune = partial(build_model_tuner, notes_vocab_size=notes_vocab_size, durations_vocab_size=durations_vocab_size)
+    # p_tune = partial(build_model_tuner, notes_vocab_size=notes_vocab_size, durations_vocab_size=durations_vocab_size)
     # tuner = RandomSearch(
-    #     part_tune,
+    #     p_tune,
     #     objective='val_loss',
     #     max_trials=10,
     #     executions_per_trial=1,
@@ -672,6 +673,155 @@ def train_intro_model(dataset="Soprano", epochs=100):
     midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Intro_{dataset}", "output-" + timestr + ".mid"))
 
 
+def train_markov_composition_model():
+    import markovify
+    GENERATE_LEN = 3
+    INCLUDE_AUGMENTED = False
+    DATAPATH = "Data/Glob/Combined_choral"
+
+    voices = ["S", "A", "T", "B"]
+    voice_parts_notes = {}
+    voice_parts_durations = {}
+    for voice in voices:
+        voice_parts_notes[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_notes", False)
+        voice_parts_durations[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_durations",
+                                                               False)
+        if INCLUDE_AUGMENTED:
+            for i in range(1, 5):
+                aug_notes = load_pickle_from_slices(f"{DATAPATH}/Combined_aug{i}_{voice}_choral_notes", False)
+                aug_dur = load_pickle_from_slices(f"{DATAPATH}/Combined_aug{i}_{voice}_choral_durations", False)
+                voice_parts_notes[voice] += aug_notes
+                voice_parts_durations[voice] += aug_dur
+
+    def train_markov_models(voice_parts_notes, voice_parts_durations):
+        voice_models = {}
+        # Train separate Markov models for notes and durations for each voice part
+        for voice in voice_parts_notes:
+            print("Training Markov models for", voice)
+            notes_model = markovify.NewlineText('\n'.join(voice_parts_notes[voice]))
+            durations_model = markovify.NewlineText('\n'.join(voice_parts_durations[voice]))
+            voice_models[voice] = {'notes': notes_model, 'durations': durations_model}
+        return voice_models
+
+    def generate_choral_sequence(voice_models, length=25):
+        # Generate a sequence for each voice part using their respective models
+        generated_sequence = {'notes': [], 'durations': []}
+        print("Generating choral sequence...")
+        for _ in range(length):
+            for voice in voice_models:
+                for _attempt in range(100):
+                    sentence_n = voice_models[voice]['notes'].make_sentence()
+                    sentence_d = voice_models[voice]['durations'].make_sentence()
+                    if sentence_n is not None and sentence_d is not None:
+                        generated_sequence['notes'].append(sentence_n)
+                        generated_sequence['durations'].append(sentence_d)
+                        break
+        return generated_sequence
+
+    def generate_midi(generated_sequence):
+        print("Generating MIDI file...")
+        voice_streams = {
+            'S': music21.stream.Part(),
+            'A': music21.stream.Part(),
+            'T': music21.stream.Part(),
+            'B': music21.stream.Part()
+        }
+
+        clefs = {
+            'S': music21.clef.TrebleClef(),
+            'A': music21.clef.TrebleClef(),
+            'T': music21.clef.Treble8vbClef(),
+            'B': music21.clef.BassClef()
+        }
+
+        for voice, stream in voice_streams.items():
+            stream.append(clefs[voice])
+
+        start_notes = ["S:START", "A:START", "T:START", "B:START"]
+        start_durations = ["0.0", "0.0", "0.0", "0.0"]
+        for sample_token, sample_duration in zip(start_notes, start_durations):
+            voice_type = sample_token.split(":")[0]
+            new_note = get_choral_midi_note(sample_token, sample_duration)
+            if new_note is not None:
+                if voice_type not in ["S", "A", "T", "B"]:
+                    voice_streams["S"].append(new_note)
+                else:
+                    voice_streams[voice_type].append(new_note)
+
+        intro = True
+
+        all_notes = []
+        all_durations = []
+        for sentence in generated_sequence['notes']:
+            if sentence is not None:
+                all_notes += sentence.split(" ")
+        for sentence in generated_sequence['durations']:
+            if sentence is not None:
+                all_durations += sentence.split(" ")
+        if len(all_notes) != len(all_durations):
+            if len(all_notes) > len(all_durations):
+                all_durations += "0.0" * (len(all_notes) - len(all_durations))
+            else:
+                all_notes += "S:rest" * (len(all_durations) - len(all_notes))
+
+        for sample_note, sample_duration in zip(all_notes, all_durations):
+            voice_type = sample_note.split(":")[0]
+            new_note = get_choral_midi_note(sample_note, sample_duration)
+
+            if (isinstance(new_note, music21.chord.Chord) or isinstance(new_note, music21.note.Note) or
+                isinstance(new_note, music21.note.Rest)) and sample_duration == "0.0":
+                continue
+            elif (isinstance(new_note, music21.tempo.MetronomeMark) or
+                  isinstance(new_note, music21.key.Key) or
+                  isinstance(new_note, music21.meter.TimeSignature)):
+                if intro:
+                    intro = False
+                else:
+                    continue
+
+            if new_note is not None:
+                if voice_type not in ["S", "A", "T", "B"]:
+                    voice_streams["S"].append(new_note)
+                else:
+                    voice_streams[voice_type].append(new_note)
+
+            if "START" in sample_note:
+                continue
+
+        midi_stream = music21.stream.Score()
+        for voice, stream in voice_streams.items():
+            midi_stream.insert(0, stream)
+        return midi_stream
+
+    if not os.path.exists(f"Weights/MarkovChain"):
+        os.makedirs(f"Weights/MarkovChain")
+        voice_models = train_markov_models(voice_parts_notes, voice_parts_durations)
+        for voice in voice_models:
+            with open(f"Weights/MarkovChain/{voice}_notes_model.pkl", "wb") as f:
+                pkl.dump(voice_models[voice]['notes'], f)
+            with open(f"Weights/MarkovChain/{voice}_durations_model.pkl", "wb") as f:
+                pkl.dump(voice_models[voice]['durations'], f)
+        print("Saved Markov models")
+    else:
+        voice_models = {}
+        for voice in voices:
+            with open(f"Weights/MarkovChain/{voice}_notes_model.pkl", "rb") as f:
+                voice_models[voice] = {'notes': pkl.load(f)}
+            with open(f"Weights/MarkovChain/{voice}_durations_model.pkl", "rb") as f:
+                voice_models[voice]['durations'] = pkl.load(f)
+        print("Loaded Markov models")
+
+    for i in range(10):
+        generated_sequence = generate_choral_sequence(voice_models, GENERATE_LEN)
+        print(generated_sequence)
+        midi_stream = generate_midi(generated_sequence)
+        timestr = time.strftime("%Y%m%d-%H%M%S")
+        if not os.path.exists(f"Data/Generated/MarkovChain"):
+            os.makedirs(f"Data/Generated/MarkovChain")
+        midi_stream.write("midi", fp=os.path.join(f"Data/Generated/MarkovChain", "output-" + timestr + ".mid"))
+    pass
+
+
 # region FeatureModels
 
 def train_duration_model(dataset="Soprano", epochs=100):
@@ -977,11 +1127,12 @@ if __name__ == '__main__':
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
     # train_choral_composition_model(epochs=40, suffix="_Mini")
-    generate_composition("Combined_choral", num_to_generate=5, generate_len=150, choral=True,
-                         temperature=.75, suffix="_Mini")
+    # generate_composition("Combined_choral", num_to_generate=5, generate_len=150, choral=True,
+    #                      temperature=.75, suffix="_Mini")
     # for tempr in [0.75, 0.9, 1.0]:
     #     generate_composition("Combined_choral", num_to_generate=2, generate_len=200, choral=True, temperature=tempr)
     # TODO: make post-processing system to perform k-s key estimation, then adjust all notes to fit diatonically
+    # train_markov_composition_model()
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)
 
