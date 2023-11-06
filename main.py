@@ -61,7 +61,7 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
         durations_vocab = pkl.load(f)
 
     # model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
-    if choral and suffix == "":
+    if choral and suffix in ["", "_New", "_Mini_New"]:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=2, num_heads=8)
     elif suffix in ["_Mini", "_Tiny"]:
@@ -197,25 +197,55 @@ def train_choral_composition_model(epochs=100, suffix=""):
     INCLUDE_AUGMENTED = False
     DATAPATH = "Data/Glob/Combined_choral"
     VALIDATION_SPLIT = 0.1
-    # WEIGHT_DECAY = 1e-4
+    WEIGHT_DECAY = 1e-4
 
-    def merge_voice_parts(voice_parts_notes, voice_parts_durations):
+    def merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=50):
         merged_notes = []
         merged_durations = []
         min_length = min([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
         for voice in voice_parts_notes:
             voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
             voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
-        # max_len = max([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
-        # for voice in voice_parts_notes:
-        #   cur_len = len(voice_parts_notes[voice])
-        #   voice_parts_notes[voice] = voice_parts_notes[voice] + voice_parts_notes[voice][:max_len-cur_len]
-        #   voice_parts_durations[voice] = voice_parts_durations[voice] + voice_parts_durations[voice][:max_len-cur_len]
-        for idx in range(len(voice_parts_notes["S"])):
-            note_str = " ".join([voice_parts_notes[voice][idx] for voice in voice_parts_notes])
-            duration_str = " ".join([voice_parts_durations[voice][idx] for voice in voice_parts_durations])
-            merged_notes.append(note_str)
-            merged_durations.append(duration_str)
+        # Old design: put notes in voice order ([S, S, S, ..., A, A, A, ..., T, T, T, ..., B, B, B, ...], ...)
+        # for idx in range(len(voice_parts_notes["S"])):
+        #     note_str = " ".join([voice_parts_notes[voice][idx] for voice in voice_parts_notes])
+        #     duration_str = " ".join([voice_parts_durations[voice][idx] for voice in voice_parts_durations])
+        #     merged_notes.append(note_str)
+        #     merged_durations.append(duration_str)
+        # New design attempt 1 -- put notes in cross-voice order ([S, A, T, B, S, A, T, B], ...)
+        notes_sequences = {"S": [], "A": [], "T": [], "B": []}
+        durations_sequences = {"S": [], "A": [], "T": [], "B": []}
+        for i in range(min_length):
+            for voice in voice_parts_notes:
+                notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
+                durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
+        note_parts_combined = []
+        duration_parts_combined = []
+        for i in range(0, min_length * 4, 4):  # each iteration processes one SATB set
+            if i + 4 > min_length * 4:  # if we're at the end and there's no full SATB set
+                break
+            for part in ['S', 'A', 'T', 'B']:
+                note_parts_combined.extend(notes_sequences[part][i // 4:i // 4 + 1])
+                duration_parts_combined.extend(durations_sequences[part][i // 4:i // 4 + 1])
+        # Split the combined sequences into chunks of seq_len
+        for i in range(0, len(note_parts_combined), seq_len):
+            merged_notes.append(' '.join(note_parts_combined[i:i + seq_len]))
+            merged_durations.append(' '.join(duration_parts_combined[i:i + seq_len]))
+        # New design attempt 2 -- combine cross-voice notes into one token (S:Note;A:Note;T:Note;B:Note)
+        # combined_tokens = []
+        # for i in range(min_length):
+        #     # Create the combined token for each index i
+        #     combined_note = ";".join([f"{voice}:{voice_parts_notes[voice][i]}" for voice in ['S', 'A', 'T', 'B']])
+        #     combined_duration = ";".join(
+        #         [f"{voice}:{voice_parts_durations[voice][i]}" for voice in ['S', 'A', 'T', 'B']])
+        #     combined_tokens.append((combined_note, combined_duration))
+        #
+        # # Chunk the combined SATB tokens into sequences of specified length
+        # for i in range(0, len(combined_tokens), seq_len):
+        #     notes_chunk = " ".join([token[0] for token in combined_tokens[i:i + seq_len]])
+        #     durations_chunk = " ".join([token[1] for token in combined_tokens[i:i + seq_len]])
+        #     merged_notes.append(notes_chunk)
+        #     merged_durations.append(durations_chunk)
         return merged_notes, merged_durations
 
     voices = ["S", "A", "T", "B"]
@@ -288,18 +318,17 @@ def train_choral_composition_model(epochs=100, suffix=""):
 
     gc.collect()
     # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
-    #                     key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=3, gradient_clip=1.)
-
+    model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2, gradient_clip=1.5)
     # Micro and Tiny models
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=12,
     #                     key_dim=64, dropout_rate=0.4, l2_reg=0.0005, num_transformer_blocks=2, gradient_clip=1.5)
-    model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=8,
-                        key_dim=64, dropout_rate=0.3, l2_reg=0.0005, num_transformer_blocks=1, gradient_clip=1.5)
+    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=8,
+    #                     key_dim=64, dropout_rate=0.3, l2_reg=0.0005, num_transformer_blocks=1, gradient_clip=1.5)
     plot_model(model, to_file=f'Images/Combined_choral_composition{suffix.lower()}_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    LOAD_MODEL = True
+    LOAD_MODEL = False
     if LOAD_MODEL:
         model.load_weights(f"Weights/Composition_Choral{suffix}/checkpoint.ckpt")
         print("Loaded model weights")
@@ -307,14 +336,14 @@ def train_choral_composition_model(epochs=100, suffix=""):
     checkpoint_callback = callbacks.ModelCheckpoint(filepath=f"Weights/Composition_Choral{suffix}/checkpoint.ckpt",
                                                     save_weights_only=True, save_freq="epoch", verbose=0)
     tensorboard_callback = callbacks.TensorBoard(log_dir=f"Logs/Combined_Choral")
-    early_stopping = EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True)  # patience=5
+    early_stopping = EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)  # patience=5
 
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN, choral=True)
 
-    DATARANGE = 0.5  # 0.5 mini; 0.25 tiny; 0.1 micro
-    train_ds = train_ds.take(int(DATARANGE * train_size))
-    val_ds = val_ds.take(int(DATARANGE * (ds_size - train_size)))
+    # DATARANGE = 0.5  # 0.5 mini; 0.25 tiny; 0.1 micro
+    # train_ds = train_ds.take(int(DATARANGE * train_size))
+    # val_ds = val_ds.take(int(DATARANGE * (ds_size - train_size)))
     # Train the model
     model.fit(train_ds, validation_data=val_ds, epochs=epochs, verbose=1,
               callbacks=[checkpoint_callback, early_stopping, tensorboard_callback])  # , music_generator
@@ -322,11 +351,13 @@ def train_choral_composition_model(epochs=100, suffix=""):
     model.save(f"Weights/Composition_Choral{suffix}/Combined_choral.keras")
 
     # Test the model
-    start_notes = ["S:START", "A:START", "T:START", "B:START"]
-    start_durations = ["0.0", "0.0", "0.0", "0.0"]
-    info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=50, temperature=0.5)
-    timestr = time.strftime("%Y%m%d-%H%M%S")
-    midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Combined_choral", "output-" + timestr + ".mid"))
+    TEST_MODEL = False
+    if TEST_MODEL:
+        start_notes = ["S:START", "A:START", "T:START", "B:START"]
+        start_durations = ["0.0", "0.0", "0.0", "0.0"]
+        info, midi_stream = music_generator.generate(start_notes, start_durations, max_tokens=50, temperature=0.5)
+        timestr = time.strftime("%Y%m%d-%H%M%S")
+        midi_stream.write("midi", fp=os.path.join(f"Data/Generated/Combined_choral", "output-" + timestr + ".mid"))
 
     pass
 
@@ -1126,9 +1157,9 @@ if __name__ == '__main__':
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
-    # train_choral_composition_model(epochs=40, suffix="_Mini")
+    train_choral_composition_model(epochs=250, suffix="_New")
     # generate_composition("Combined_choral", num_to_generate=5, generate_len=150, choral=True,
-    #                      temperature=.75, suffix="_Mini")
+    #                      temperature=.75, suffix="_Mini_New")
     # for tempr in [0.75, 0.9, 1.0]:
     #     generate_composition("Combined_choral", num_to_generate=2, generate_len=200, choral=True, temperature=tempr)
     # TODO: make post-processing system to perform k-s key estimation, then adjust all notes to fit diatonically
