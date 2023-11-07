@@ -152,7 +152,8 @@ def create_all_datasets():
 
 
 # region VoiceTransformer
-def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False, limit=None, mm_limit=0):
+def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False,
+                            limit=None, mm_limit=0, include_key=True):
     all_voices_data = {'S': [], 'A': [], 'T': [], 'B': []}
 
     if limit is not None:
@@ -177,7 +178,7 @@ def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, v
                 if isinstance(element, music21.tempo.MetronomeMark):
                     note_name = str(element.number) + "BPM"
                     duration_name = "0.0"
-                elif isinstance(element, music21.key.Key):
+                elif isinstance(element, music21.key.Key) and include_key:
                     note_name = str(element.tonic.name) + ":" + str(element.mode)
                     duration_name = "0.0"
                 elif isinstance(element, music21.meter.TimeSignature):
@@ -598,7 +599,8 @@ def augment_midi_files(path):
     pass
 
 
-def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False, measure_limit=0, seq_len=50):
+def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", choral=False,
+               measure_limit=0, seq_len=50, include_key=True):
     POLYPHONIC = True
     file_list = glob.glob(path + "/*.mid")
     parser = music21.converter
@@ -607,8 +609,8 @@ def glob_midis(path, output_path="Data/Glob/Combined/Combined_", suffix="", chor
         _, _ = parse_midi_files(file_list, parser, seq_len + 1, output_path + suffix,
                                 verbose=True, enable_chords=POLYPHONIC, limit=None)
     else:
-        _ = parse_choral_midi_files(file_list, parser, seq_len + 1, output_path + suffix,
-                                    verbose=True, limit=None, mm_limit=measure_limit)
+        _ = parse_choral_midi_files(file_list, parser, seq_len + 1, output_path + suffix, verbose=True,
+                                    limit=None, mm_limit=measure_limit, include_key=include_key)
     print("Complete!")
 
 
@@ -649,6 +651,31 @@ def load_pickle_from_slices(filename, include_augmented=False):
             combined_data.extend(slice_data)
     print("Loaded data of length:", len(combined_data))
     return combined_data
+
+
+def unify_transpose_midi_files(path):
+    transposed_dir = os.path.join(path, "Transposed")
+    if not os.path.exists(transposed_dir):
+        os.makedirs(transposed_dir)
+    file_list = glob.glob(path + "/*.mid")
+    for i, file in enumerate(file_list):
+        try:
+            print(i + 1, "Parsing %s" % file)
+            if os.path.exists(os.path.join(transposed_dir, os.path.basename(file))):
+                continue
+            # Load MIDI file and transpose to C major/A minor
+            midi = music21.converter.parse(file)
+            key = midi.analyze('key')
+            if key.mode == "major":
+                interval = music21.interval.Interval(key.tonic, music21.pitch.Pitch('C'))
+            else:
+                interval = music21.interval.Interval(key.tonic, music21.pitch.Pitch('A'))
+            transposed_midi = midi.transpose(interval)
+            transposed_file_path = os.path.join(transposed_dir, os.path.basename(file))
+            transposed_midi.write('midi', fp=transposed_file_path)
+        except Exception as e:
+            print(f"\tError parsing file {file}: {e}")
+
 
 # endregion VoiceTransformer
 
@@ -813,6 +840,12 @@ if __name__ == "__main__":
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_3", "Data/Glob/Combined_mm1-8/Combined_aug3_", "", True, 8)
         glob_midis("Data/MIDI/VoiceParts/Combined/Augment_4", "Data/Glob/Combined_mm1-8/Combined_aug4_", "", True, 8)
     """
+    # unify_transpose_midi_files("Data/MIDI/VoiceParts/Combined")
+    # glob_midis("Data/MIDI/VoiceParts/Combined/Transposed", "Data/Glob/Combined_transposed/Combined_",
+    #            choral=True, include_key=False)
+    # for voice in ["S", "A", "T", "B"]:
+    #     slice_pickle(f"Data/Glob/Combined_transposed/Combined_{voice}_choral_notes.pkl", slices=4)
+    #     slice_pickle(f"Data/Glob/Combined_transposed/Combined_{voice}_choral_durations.pkl", slices=2)
     # for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
     #     meta_analysis(voice)
     # view_meta_analysis("Soprano")

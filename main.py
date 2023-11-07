@@ -67,6 +67,9 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
     elif suffix == "_Micro":
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512, key_dim=64,
                             dropout_rate=0.3, l2_reg=0.0005, num_transformer_blocks=1, gradient_clip=1.5, num_heads=8)
+    elif suffix == "_Transposed2":
+        model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
+                            key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=3, num_heads=8)
     else:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=2, num_heads=8)
@@ -189,13 +192,13 @@ def build_model_tuner(hp, notes_vocab_size, durations_vocab_size):
     # 'dropout_rate': 0.4, 'l2_reg': 0.0004213313484484104, 'num_transformer_blocks': 2
 
 
-def train_choral_composition_model(epochs=100, suffix=""):
+def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     """Trains a choral Transformer model to generate notes and times."""
     BATCH_SIZE = 128
     # DATASET_REPETITIONS = 2
     GENERATE_LEN = 25
     INCLUDE_AUGMENTED = False
-    DATAPATH = "Data/Glob/Combined_choral"
+    DATAPATH = "Data/Glob/Combined_choral" if not transposed else "Data/Glob/Combined_transposed"
     VALIDATION_SPLIT = 0.1
     WEIGHT_DECAY = 1e-4
 
@@ -266,6 +269,7 @@ def train_choral_composition_model(epochs=100, suffix=""):
     voice_parts_notes = {}
     voice_parts_durations = {}
     for voice in voices:
+        print(f"Loading {voice} voice parts from {DATAPATH}...")
         voice_parts_notes[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_notes", False)
         voice_parts_durations[voice] = load_pickle_from_slices(f"{DATAPATH}/Combined_{voice}_choral_durations", False)
         if INCLUDE_AUGMENTED:
@@ -275,7 +279,7 @@ def train_choral_composition_model(epochs=100, suffix=""):
                 voice_parts_notes[voice] += aug_notes
                 voice_parts_durations[voice] += aug_dur
 
-    notes, durations = merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=52)
+    notes, durations = merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=100)  # seq_len=52
     notes_seq_ds, notes_vectorize_layer, notes_vocab = create_transformer_dataset(notes, BATCH_SIZE)
     durations_seq_ds, durations_vectorize_layer, durations_vocab = create_transformer_dataset(durations, BATCH_SIZE)
     seq_ds = tf.data.Dataset.zip((notes_seq_ds, durations_seq_ds))
@@ -332,8 +336,10 @@ def train_choral_composition_model(epochs=100, suffix=""):
 
     gc.collect()
     # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
+    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+    #                    key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2, gradient_clip=1.5)
     model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
-                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2, gradient_clip=1.5)
+                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=3, gradient_clip=1.5)
     # Micro and Tiny models
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=12,
     #                     key_dim=64, dropout_rate=0.4, l2_reg=0.0005, num_transformer_blocks=2, gradient_clip=1.5)
@@ -342,7 +348,7 @@ def train_choral_composition_model(epochs=100, suffix=""):
     plot_model(model, to_file=f'Images/Combined_choral_composition{suffix.lower()}_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    LOAD_MODEL = True
+    LOAD_MODEL = False
     if LOAD_MODEL:
         model.load_weights(f"Weights/Composition_Choral{suffix}/checkpoint.ckpt")
         print("Loaded model weights")
@@ -1171,12 +1177,12 @@ if __name__ == '__main__':
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
-    # train_choral_composition_model(epochs=148, suffix="_New2")
+    # train_choral_composition_model(epochs=250, suffix="_Transposed2", transposed=True)
     # generate_composition("Combined_choral", num_to_generate=5, generate_len=150, choral=True,
     #                      temperature=.75, suffix="_New")
-    for tempr in [0.75, 0.9, 1.0]:  # 0.55
+    for tempr in [0.75, 0.9]:  # 0.55, ... , 1.0
         generate_composition("Combined_choral", num_to_generate=3, generate_len=200,
-                             choral=True, temperature=tempr, suffix="_New2")
+                             choral=True, temperature=tempr, suffix="_Transposed2")
     # TODO: make post-processing system to perform k-s key estimation, then adjust all notes to fit diatonically
     # train_markov_composition_model()
     # generate_composition_bpe()
