@@ -110,7 +110,7 @@ def apply_voice_leading(score):
     return score
 
 
-# Step 3: Double correct tones in chords
+# Step 3
 def double_correct_tones(chord):
     """
     Corrects doubled leading tones, altered tones, and tones in seventh chords within a given chord
@@ -162,7 +162,7 @@ def move_to_available_pitch(chord, pitch_to_move):
     return pitch_to_move  # If all diatonic pitches are taken, return the original pitch (unlikely in four-part harmony)
 
 
-# Step 4: Correct melodic intervals
+# Step 4
 def correct_melodic_intervals(score):
     """
     Corrects melodic intervals within each voice part to adhere to voice-leading rules.
@@ -188,8 +188,7 @@ def correct_melodic_intervals(score):
                 next_note.pitch = new_next_pitch
 
             # Check for skips larger than an octave or a sixth
-            if interv.name in ['m7', 'M7', 'P8'] and (
-                    i < len(notes_to_check) - 2):  # Check if there's room for correction
+            if interv.name in ['m7', 'M7', 'P8'] and (i < len(notes_to_check) - 2):  # Check for room for correction
                 # The following note should move in stepwise motion in the opposite direction
                 following_note = notes_to_check[i + 2]
                 stepwise_direction = 1 if interv.direction == 'descending' else -1  # Reverse the direction
@@ -328,6 +327,7 @@ def process_midi(midi_path, adjusted_midi_path='Data/Postprocessed', verbose=Tru
     print("Completed step 5\n" if verbose else "", end="")
     score = handle_dissonances(score)
     print("Completed step 6\n" if verbose else "", end="")
+
     print("Rerunning steps 1 and 2 to adjust any new voice leading issues...\n" if verbose else "", end="")
     score = apply_voice_leading(score)
     score = make_notes_diatonic(score, 'C')
