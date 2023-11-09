@@ -270,34 +270,43 @@ def handle_dissonances(score):
     return score
 
 
-def get_new_bpm():
+def get_new_key_and_bpm():
     t_key, t_time_sig, t_tempo, entrance = validate_and_generate_metatrack('Soprano')
-    return t_tempo
+    return t_key, t_tempo
 
 
-def change_bpm_and_key(midi_file_path, new_bpm, output_file_path):
+def change_bpm_and_key(midi_file_path, output_file_path, new_bpm=None, new_key_tonic=None):
     mf = midi.MidiFile()
     mf.open(midi_file_path)
     mf.read()
     mf.close()
     midi_stream = midi.translate.midiFileToStream(mf)
 
-    # Remove existing tempo changes
-    for el in midi_stream.flat.getElementsByClass(tempo.MetronomeMark):
-        midi_stream.remove(el, recurse=True)
+    if new_bpm:
+        # Remove existing tempo changes
+        for el in midi_stream.flat.getElementsByClass(tempo.MetronomeMark):
+            midi_stream.remove(el, recurse=True)
 
-    new_metronome_mark = tempo.MetronomeMark(number=new_bpm)
-    midi_stream.insert(0, new_metronome_mark)
+        new_metronome_mark = tempo.MetronomeMark(number=new_bpm)
+        midi_stream.insert(0, new_metronome_mark)
 
-    # Change key signature
-    for el in midi_stream.recurse():
-        if isinstance(el, key.KeySignature):
-            if el.mode == "minor":
-                el.tonic = key.pitch.Pitch('A')
-            else:
-                el.tonic = key.pitch.Pitch('C')
+    original_key = midi_stream.analyze('key')
+    original_mode = original_key.mode
 
+    if new_key_tonic:
+        # Construct the new key with the same mode as the original
+        if original_mode == 'major':
+            new_key = key.Key(new_key_tonic)
+        elif original_mode == 'minor':
+            new_key = key.Key(new_key_tonic, 'minor')
+
+        i = interval.Interval(original_key.tonic, new_key.tonic)
+        midi_stream.transpose(i, inPlace=True)
+        midi_stream.replace(original_key, new_key, allDerived=True)
+
+    # Save the modified MIDI stream to a file
     midi_stream.write('midi', fp=output_file_path)
+    return original_mode
 
 
 def save_midi(score, adjusted_midi_path):
@@ -323,6 +332,7 @@ def process_midi(midi_path, adjusted_midi_path='Data/Postprocessed', verbose=Tru
     score = apply_voice_leading(score)
     score = make_notes_diatonic(score, 'C')
     print("Completed rerun of steps 1 and 2\n" if verbose else "", end="")
+
     if not os.path.exists(adjusted_midi_path):
         os.makedirs(adjusted_midi_path)
     output_path = os.path.join(adjusted_midi_path, os.path.basename(midi_path))
@@ -333,19 +343,32 @@ def process_midi(midi_path, adjusted_midi_path='Data/Postprocessed', verbose=Tru
 
 if __name__ == "__main__":
     print("Hello, world!")
+    path = input("Enter the path to the MIDI file: ")
+    output = process_midi(path)
+
     bpm_option = input("Would you like to change the BPM of the MIDI file? "
                        "(\033[4mn\033[0mo/\033[4mr\033[0mandom/enter number [e.g., 160]): ")
     if bpm_option.lower() in "no":
-        bpm = None
+        n_bpm = None
     elif bpm_option.lower() in "random":
-        bpm = int(get_new_bpm().split('BPM')[0])
-        print(f"Randomly selected BPM: {bpm}")
+        n_bpm = int(get_new_key_and_bpm()[1].split('BPM')[0])
+        print(f"Randomly selected BPM: {n_bpm}")
     else:
-        bpm = int(bpm_option)
-    path = input("Enter the path to the MIDI file: ")
-    output = process_midi(path)
-    if bpm is not None:
-        change_bpm_and_key(output, bpm, output)
-        print("Finished changing BPM.")
-    # TODO: add option to change key (based on current mode)
+        n_bpm = int(bpm_option)
+
+    key_option = input("Would you like to change the key of the MIDI file? "
+                       "(\033[4my\033[0mes/\033[4mn\033[0mo/\033[4mr\033[0mandom): ")
+    if key_option.lower() in "yes":
+        n_key = input("Enter the key to change to (not including mode; e.g., C, D, Ab, F#): ")
+    elif key_option.lower() in "random":
+        n_key = get_new_key_and_bpm()[0].split(':')[0]
+        print(f"Randomly selected key: {n_key}")
+    else:
+        n_key = None
+
+    if n_bpm is not None or n_key is not None:
+        mode = change_bpm_and_key(output, output, n_bpm, n_key)
+        keymsg = "" if n_key is None else f" and key ({n_key} {mode})"
+        print(f"Finished changing BPM{keymsg}.")
+
     pass
