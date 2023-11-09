@@ -1183,7 +1183,6 @@ if __name__ == '__main__':
     for tempr in [0.75, 0.9]:  # 0.55, ... , 1.0
         generate_composition("Combined_choral", num_to_generate=3, generate_len=200,
                              choral=True, temperature=tempr, suffix="_Transposed2")
-    # TODO: make post-processing system to perform k-s key estimation, then adjust all notes to fit diatonically
     # train_markov_composition_model()
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)
