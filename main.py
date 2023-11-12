@@ -6,6 +6,7 @@ import random
 import logging
 import warnings
 import numpy as np
+import plotly.express as px
 import matplotlib.pyplot as plt
 from Transformer import *
 from keras import layers
@@ -23,6 +24,7 @@ from data_utils import key_signature_to_number
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from keras_tuner import HyperParameters, Objective, tuners
 
 
 tf.get_logger().setLevel(logging.ERROR)
@@ -70,6 +72,13 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
     elif suffix == "_Transposed2":
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=3, num_heads=8)
+    elif suffix == "_Transposed3":
+        model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512, key_dim=64,
+                            num_heads=12, dropout_rate=0.3, l2_reg=3.56E-05, num_transformer_blocks=3, gradient_clip=1)
+    elif suffix == "_Transposed4":
+        model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=1024, feed_forward_dim=1024,
+                            key_dim=64, dropout_rate=0.4, l2_reg=1.4910815e-05, num_transformer_blocks=3,
+                            num_heads=12, gradient_clip=1.5)
     else:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=2, num_heads=8)
@@ -158,7 +167,7 @@ def build_model(notes_vocab_size, durations_vocab_size, gradient_clip=None,
     x = embeddings
     for i in range(num_transformer_blocks):
         x, _ = TransformerBlock(name=f"attention_{i+1}", embed_dim=embedding_dim, ff_dim=feed_forward_dim,
-                                num_heads=num_heads, key_dim=key_dim, dropout_rate=dropout_rate)(x)
+                                num_heads=num_heads, key_dim=key_dim, dropout_rate=dropout_rate, l2_reg=l2_reg)(x)
     # note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs")(x)
     # duration_outputs = layers.Dense(durations_vocab_size, activation="softmax", name="duration_outputs")(x)
     note_outputs = layers.Dense(notes_vocab_size, activation="softmax", name="note_outputs",
@@ -176,8 +185,8 @@ def build_model(notes_vocab_size, durations_vocab_size, gradient_clip=None,
 
 def build_model_tuner(hp, notes_vocab_size, durations_vocab_size):
     embedding_dim = hp.Choice('embedding_dim', values=[512])  # 256, 512, 1024
-    feed_forward_dim = hp.Choice('feed_forward_dim', values=[512])  # 256, 512, 1024
-    key_dim = hp.Choice('key_dim', values=[64, 128, 256])  # 256 -- 1024 -- 256
+    feed_forward_dim = hp.Choice('feed_forward_dim', values=[512, 1024])  # 256, 512, 1024
+    key_dim = hp.Choice('key_dim', values=[64, 128])  # 256 -- 1024 -- 256
     num_heads = hp.Choice('num_heads', values=[4, 8, 12])  # 4 -- 8
     gradient_clip = hp.Choice('gradient_clip', values=[0.5, 1.0, 1.5])  # 0.5 -- 1.5
     dropout_rate = hp.Float('dropout_rate', min_value=0.2, max_value=0.5, step=0.1)  # 0.3 -- 0.4
@@ -193,7 +202,7 @@ def build_model_tuner(hp, notes_vocab_size, durations_vocab_size):
 
 
 def train_choral_composition_model(epochs=100, suffix="", transposed=False):
-    """Trains a choral Transformer model to generate notes and times."""
+    """Trains a choral Transformer model to generate notes and durations."""
     BATCH_SIZE = 128
     # DATASET_REPETITIONS = 2
     GENERATE_LEN = 25
@@ -205,10 +214,11 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     def merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=50, max_rest_len=4):
         merged_notes = []
         merged_durations = []
-        min_length = min([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
-        for voice in voice_parts_notes:
-            voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
-            voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
+        # Old design: truncate all voice parts to the length of the shortest one (working)
+        # min_length = min([len(voice_parts_notes[voice]) for voice in voice_parts_notes])
+        # for voice in voice_parts_notes:
+        #     voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
+        #     voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
         # Old design: put notes in voice order ([S, S, S, ..., A, A, A, ..., T, T, T, ..., B, B, B, ...], ...)
         # for idx in range(len(voice_parts_notes["S"])):
         #     note_str = " ".join([voice_parts_notes[voice][idx] for voice in voice_parts_notes])
@@ -218,8 +228,12 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
         # New design attempt 1 -- put notes in cross-voice order ([S, A, T, B, S, A, T, B], ...)
         notes_sequences = {"S": [], "A": [], "T": [], "B": []}
         durations_sequences = {"S": [], "A": [], "T": [], "B": []}
-        for i in range(min_length):
-            for voice in voice_parts_notes:
+        # for i in range(min_length):
+        #     for voice in voice_parts_notes:
+        for voice in voice_parts_notes:
+            for i in range(len(voice_parts_notes[voice])):
+                # notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
+                # durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
                 if max_rest_len is None:
                     notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
                     durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
@@ -235,7 +249,12 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
                         if rest_cnt <= max_rest_len:
                             notes_sequences[voice].append(split_notes[j])
                             durations_sequences[voice].append(split_durations[j])
-                    pass
+                pass
+        # # Attempt 1.75 -- truncate to the minimum length after removing rests (not working as intended yet)
+        min_length = min([len(notes_sequences[voice]) for voice in notes_sequences])
+        for voice in notes_sequences:
+            notes_sequences[voice] = notes_sequences[voice][:min_length]
+            durations_sequences[voice] = durations_sequences[voice][:min_length]
         note_parts_combined = []
         duration_parts_combined = []
         for i in range(0, min_length * 4, 4):  # each iteration processes one SATB set
@@ -307,7 +326,7 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
         y = (tokenized_notes[:, 1:], tokenized_durations[:, 1:])
         return x, y
 
-    ds = seq_ds.map(prepare_inputs).shuffle(1024)  # .batch(BATCH_SIZE)
+    ds = seq_ds.map(prepare_inputs).shuffle(1024, seed=0)  # .batch(BATCH_SIZE)
 
     # Splitting dataset into training and validation
     ds_size = ds.cardinality().numpy()
@@ -315,31 +334,63 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     train_ds = ds.take(train_size)
     val_ds = ds.skip(train_size)
 
-    # p_tune = partial(build_model_tuner, notes_vocab_size=notes_vocab_size, durations_vocab_size=durations_vocab_size)
-    # tuner = RandomSearch(
-    #     p_tune,
-    #     objective='val_loss',
-    #     max_trials=10,
-    #     executions_per_trial=1,
-    #     directory='Weights/Hyperparameter_search',
-    #     project_name='choral_composition',
-    #     overwrite=True)
-    #
-    # train_ds_sm = train_ds.take(int(0.05 * train_size))
-    # val_ds_sm = val_ds.take(int(0.05 * (ds_size - train_size)))
-    # tuner.search(train_ds_sm, validation_data=val_ds_sm, epochs=5)
-    # best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
-    # print("Best Hyperparameters: ", best_hp.get_config())
-    #
-    # model = tuner.get_best_models(num_models=1)[0]
-    # model.summary()
+    def hyperparameter_search(tuner_trials=15, t_epochs=10, plot=True, grid_search=False, dataset_size=1., t_suffix=""):
+        ptune = partial(build_model_tuner, notes_vocab_size=notes_vocab_size, durations_vocab_size=durations_vocab_size)
+        if not grid_search:
+            tuner = RandomSearch(
+                ptune,
+                objective=Objective("val_loss", direction="min"),
+                max_trials=tuner_trials,
+                executions_per_trial=1,
+                directory='Weights/Hyperparameter_search',
+                project_name='choral_composition',
+                overwrite=True)
+        else:
+            tuner = tuners.GridSearch(
+                ptune,
+                objective=Objective("val_loss", direction="min"),
+                directory='Weights/Hyperparameter_search',
+                project_name='choral_composition',
+                overwrite=True)
+        train_ds_sm = train_ds.take(int(dataset_size * train_size))
+        val_ds_sm = val_ds.take(int(dataset_size * (ds_size - train_size)))
+        tuner.search(train_ds_sm, validation_data=val_ds_sm, epochs=t_epochs)
+        best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
+        print("Best Hyperparameters: ", best_hp.get_config())
+        t_model = tuner.get_best_models(num_models=1)[0]
+        t_model.summary()
 
+        if plot:
+            trials = tuner.oracle.get_best_trials(num_trials=tuner_trials)
+            results = [trial.hyperparameters.values for trial in trials]
+            results_df = pd.DataFrame(results)
+            results_df['score'] = [trial.score for trial in trials]
+            results_df['trial_id'] = [trial.trial_id for trial in trials]
+            results_df.to_csv(f'Weights/hyperparameter_results{t_suffix}.csv', index=False)
+
+            fig = px.parallel_coordinates(
+                results_df,
+                color="score",
+                labels={col: col for col in results_df.columns},
+                color_continuous_scale=px.colors.diverging.Tealrose,
+                color_continuous_midpoint=results_df['score'].mean()
+            )
+            fig.show()
+            fig.write_image(f"Images/Hyperparameter_results{t_suffix}.svg", width=1200, height=600)
+        return t_model
+
+    model = hyperparameter_search(grid_search=False, tuner_trials=25, t_epochs=50, dataset_size=0.1, t_suffix="_3")
     gc.collect()
+    # Best Transposed model
+    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=1024, feed_forward_dim=1024,
+    #                     num_heads=12, key_dim=64, dropout_rate=0.4, l2_reg=1.4910815e-05, num_transformer_blocks=3,
+    #                     gradient_clip=1.5)
     # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
     #                    key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2, gradient_clip=1.5)
-    model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
-                        key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=3, gradient_clip=1.5)
+    # Transposed model (original has 2 transformer blocks, #2 has 3)
+    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
+    #                    key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=3, gradient_clip=1.5)
     # Micro and Tiny models
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=12,
     #                     key_dim=64, dropout_rate=0.4, l2_reg=0.0005, num_transformer_blocks=2, gradient_clip=1.5)
@@ -361,9 +412,9 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN, choral=True)
 
-    # DATARANGE = 0.5  # 0.5 mini; 0.25 tiny; 0.1 micro
-    # train_ds = train_ds.take(int(DATARANGE * train_size))
-    # val_ds = val_ds.take(int(DATARANGE * (ds_size - train_size)))
+    DATARANGE = 0.1  # 0.5 mini; 0.25 tiny; 0.1 micro
+    train_ds = train_ds.take(int(DATARANGE * train_size))
+    val_ds = val_ds.take(int(DATARANGE * (ds_size - train_size)))
     # Train the model
     model.fit(train_ds, validation_data=val_ds, epochs=epochs, verbose=1,
               callbacks=[checkpoint_callback, early_stopping, tensorboard_callback])  # , music_generator
@@ -383,7 +434,7 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
 
 
 def train_composition_model(dataset="Soprano", epochs=100, load_augmented_dataset=False):
-    """Trains a Transformer model to generate notes and times."""
+    """Trains a Transformer model to generate notes and durations."""
     PARSE_MIDI_FILES = not os.path.exists(f"Data/Glob/{dataset}_notes.pkl")
     PARSED_DATA_PATH = f"Data/Glob/{dataset}_"
     POLYPHONIC = True
@@ -563,47 +614,6 @@ def train_composition_model(dataset="Soprano", epochs=100, load_augmented_datase
         plt.show()
 
         pass
-
-
-# def generate_composition_bpe():
-#     """Generates a composition using the MusicBPE Transformer model."""
-#     from fairseq.models import FairseqLanguageModel
-#     from musicbpe_preprocessing import note_seq_to_midi_file
-#     from musicbpe_preprocessing import process_prime_midi, gen_one, get_trk_ins_map, get_note_seq, music_dict
-#     config = {}
-#     with open("config.sh", "r") as f:
-#         for line in f:
-#             name, value = line.strip().split('=')
-#             config[name] = value
-#     MAX_POS_LEN = 4096
-#     IGNORE_META_LOSS = 1
-#     BPE = "_bpe"  # or ""
-#     DATA_BIN = f"linear_{MAX_POS_LEN}_chord{BPE}_hardloss{IGNORE_META_LOSS}"
-#     DATA_BIN_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/bin/"
-#     DATA_VOC_DIR = f"Data/Glob/Preprocessed/Model_spec/{DATA_BIN}/vocabs/"
-#     music_dict.load_vocabs_bpe(DATA_VOC_DIR, 'Data/Glob/Preprocessed/bpe_res/' if BPE == '_bpe' else None)
-#     custom_lm = FairseqLanguageModel.from_pretrained('.', checkpoint_file=f"Weights/MusicBPE/checkpoint_last.pt",
-#                                                      data_name_or_path=DATA_BIN_DIR, user_dir="Model")
-#     model = custom_lm.models[0]
-#     model.cuda()
-#     model.eval()
-#     prime_midi_name = 'Data/Generated/test_prime.mid'
-#     max_measure_cnt = 9
-#     max_chord_measure_cnt = 0
-#     prime, ins_label = process_prime_midi(prime_midi_name, max_measure_cnt, max_chord_measure_cnt)
-#     while True:
-#         try:
-#             generated, ins_logits = gen_one(model, prime, MIN_LEN=100)  # 1024
-#             break
-#         except Exception as e:
-#             print(e)
-#             continue
-#     trk_ins_map = get_trk_ins_map(generated, ins_logits)  # Need to limit to 4 tracks
-#     note_seq = get_note_seq(generated, trk_ins_map, assert_valid=False)
-#     timestamp = time.strftime("%m-%d_%H-%M-%S", time.localtime())
-#     output_name = f"Data/Generated/MusicBPE/output_prime{max_measure_cnt}_chord{max_chord_measure_cnt}_{timestamp}.mid"
-#     note_seq_to_midi_file(note_seq, output_name)
-#     pass
 
 
 def generate_intro(dataset="Soprano", generate_len=50, temperature=0.5, key=None,
@@ -1177,12 +1187,12 @@ if __name__ == '__main__':
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
-    # train_choral_composition_model(epochs=250, suffix="_Transposed2", transposed=True)
-    # generate_composition("Combined_choral", num_to_generate=5, generate_len=150, choral=True,
-    #                      temperature=.75, suffix="_New")
-    for tempr in [0.75, 0.9]:  # 0.55, ... , 1.0
-        generate_composition("Combined_choral", num_to_generate=3, generate_len=200,
-                             choral=True, temperature=tempr, suffix="_Transposed2")
+    train_choral_composition_model(epochs=250, suffix="_Transposed5", transposed=True)
+    # generate_composition("Combined_choral", num_to_generate=10, generate_len=200, choral=True,
+    #                      temperature=.65, suffix="_Transposed4")
+    # for tempr in [0.25, 0.45, 0.55, 0.65]:  # 0.55, ... , 1.0
+    #     generate_composition("Combined_choral", num_to_generate=5, generate_len=160,
+    #                          choral=True, temperature=tempr, suffix="_Transposed_Tuned")
     # train_markov_composition_model()
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)

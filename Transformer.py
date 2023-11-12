@@ -67,19 +67,19 @@ class TokenAndPositionEmbedding(layers.Layer):
 
 
 class TransformerBlock(layers.Layer):
-    def __init__(self, name, num_heads=5, key_dim=256, embed_dim=256, ff_dim=256, dropout_rate=0.3):
+    def __init__(self, name, num_heads=5, key_dim=256, embed_dim=256, ff_dim=256, dropout_rate=0.3, l2_reg=None):
         super(TransformerBlock, self).__init__(name=name)
         self.num_heads = num_heads
         self.key_dim = key_dim
         self.embed_dim = embed_dim
         self.ff_dim = ff_dim
         self.dropout_rate = dropout_rate
-        # self.attn = layers.MultiHeadAttention(num_heads, key_dim, output_shape=embed_dim)
+        self.l2_reg = l2_reg
         self.attn = layers.MultiHeadAttention(num_heads=num_heads, key_dim=self.key_dim, output_shape=self.embed_dim)
         self.dropout_1 = layers.Dropout(self.dropout_rate)
         self.ln_1 = layers.LayerNormalization(epsilon=1e-6)
-        self.ffn_1 = layers.Dense(self.ff_dim, activation="relu")
-        self.ffn_2 = layers.Dense(self.embed_dim)
+        self.ffn_1 = layers.Dense(self.ff_dim, activation="relu", kernel_regularizer=l2(l2_reg))
+        self.ffn_2 = layers.Dense(self.embed_dim, kernel_regularizer=l2(l2_reg))
         self.dropout_2 = layers.Dropout(self.dropout_rate)
         self.ln_2 = layers.LayerNormalization(epsilon=1e-6)
 
@@ -88,7 +88,7 @@ class TransformerBlock(layers.Layer):
         batch_size = input_shape[0]
         seq_len = input_shape[1]
         causal_mask = causal_attention_mask(batch_size, seq_len, seq_len, tf.bool)
-        causal_mask = tf.expand_dims(causal_mask, 1)  # Add an additional dimension; TODO: remove
+        causal_mask = tf.expand_dims(causal_mask, 1)
         attention_output, attention_scores = self.attn(inputs, inputs, attention_mask=causal_mask,
                                                        return_attention_scores=True)
         attention_output = self.dropout_1(attention_output)
@@ -106,6 +106,7 @@ class TransformerBlock(layers.Layer):
             "num_heads": self.num_heads,
             "ff_dim": self.ff_dim,
             "dropout_rate": self.dropout_rate,
+            "l2_reg": self.l2_reg,
         })
         return config
 
