@@ -79,9 +79,9 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=1024, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.4, l2_reg=1.4910815e-05, num_transformer_blocks=3,
                             num_heads=12, gradient_clip=1.5)
-    elif suffix in ["_Transposed5", "_Transposed7"]:
+    elif suffix in ["_Transposed5", "_Transposed7", "_Transposed9"]:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512,
-                            key_dim=128, dropout_rate=0.5, l2_reg=0.0005, num_transformer_blocks=3, num_heads=8,
+                            key_dim=128, dropout_rate=0.0, l2_reg=1e-6, num_transformer_blocks=3, num_heads=8,
                             gradient_clip=1.5)
     elif suffix == "_Transposed6":
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
@@ -399,9 +399,11 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     # model = hyperparameter_search(grid_search=False, tuner_trials=15, t_epochs=50,
     #                               resume=False, t_suffix="_9", dataset_size=1.0)
     gc.collect()
-    # Best Transposed model (.125 dataset)
+    # Best Transposed model (.125 and .25 datasets)
+    # Switched dropout rate from 0.2 to 0.1 at epoch 250, then to 0.05/l2 2e-5 at epoch 275, then 0.0025/1.5e-5 at 300,
+    # then 0.00125/1e-5 at 325, then 0.0005/1e-6 at 350, then 0.00025 at 375, then 0.000125 at 400, finally 5e-5 at 450
     model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=8,
-                        key_dim=128, dropout_rate=0.2, l2_reg=0.00002666, num_transformer_blocks=3, gradient_clip=1.5)
+                        key_dim=128, dropout_rate=0.00005, l2_reg=1e-6, num_transformer_blocks=3, gradient_clip=1.5)
     # Best Transposed model (tiny dataset)
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=12
     #                     key_dim=64, dropout_rate=0.2, l2_reg=0.00002, num_transformer_blocks=2, gradient_clip=0.5)
@@ -1210,12 +1212,12 @@ if __name__ == '__main__':
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
-    train_choral_composition_model(epochs=141, suffix="_Transposed9", transposed=True)
-    # generate_composition("Combined_choral", num_to_generate=10, generate_len=200, choral=True,
-    #                      temperature=.75, suffix="_Transposed7")
-    # for tempr in [0.25, 0.45, 0.55, 0.65]:  # 0.55, ... , 1.0
-    #     generate_composition("Combined_choral", num_to_generate=5, generate_len=160,
-    #                          choral=True, temperature=tempr, suffix="_Transposed_Tuned")
+    # train_choral_composition_model(epochs=50, suffix="_Transposed9", transposed=True)
+    generate_composition("Combined_choral", num_to_generate=10, generate_len=200, choral=True,
+                         temperature=.65, suffix="_Transposed9")
+    # for tempr in [0.55, 0.65, 0.75, 0.95]:  # 0.55, ... , 1.0
+    #     generate_composition("Combined_choral", num_to_generate=5, generate_len=200,
+    #                          choral=True, temperature=tempr, suffix="_Transposed9")
     # train_markov_composition_model()
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)

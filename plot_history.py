@@ -36,14 +36,14 @@ if __name__ == "__main__":
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Loss vs. Epoch")
-    plt.ylim(0, 9)  # 6.5
-    for i in range(0, len(loss), 25):  # 50
+    plt.ylim(0, 6)  # 6.5
+    for i in range(0, len(loss), 50):  # 25
         if i == 0:
             i += 1
-        plt.text(i, loss[i], "{:.2f}".format(loss[i]), ha="center", va="bottom", fontsize=8)
-        plt.text(i, note_outputs_loss[i], "{:.2f}".format(note_outputs_loss[i]), ha="center", va="bottom", fontsize=8)
+        plt.text(i, loss[i], "{:.3f}".format(loss[i]), ha="center", va="bottom", fontsize=8)
+        plt.text(i, note_outputs_loss[i], "{:.3f}".format(note_outputs_loss[i]), ha="center", va="bottom", fontsize=8)
         offset = 0.2 if i != 1 else 0
-        plt.text(i, duration_outputs_loss[i]-offset, "{:.2f}".format(duration_outputs_loss[i]),
+        plt.text(i, duration_outputs_loss[i]-offset, "{:.3f}".format(duration_outputs_loss[i]),
                  ha="center", va="bottom", fontsize=8)
     plt.legend()
     plt.savefig(os.path.join(os.getcwd(), "Images/Combined_choral_transposed9_composition_model_history.png"))

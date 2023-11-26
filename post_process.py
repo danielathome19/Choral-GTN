@@ -343,7 +343,7 @@ def process_midi(midi_path, adjusted_midi_path='Data/Postprocessed', verbose=Tru
 
 if __name__ == "__main__":
     print("Hello, world!")
-    path = input("Enter the path to the MIDI file: ")
+    path = input("Enter the path to the MIDI file: ").replace('"', '')
     output = process_midi(path)
 
     bpm_option = input("Would you like to change the BPM of the MIDI file? "
