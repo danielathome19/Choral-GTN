@@ -342,6 +342,7 @@ def process_midi(midi_path, adjusted_midi_path='Data/Postprocessed', verbose=Tru
 
 
 if __name__ == "__main__":
+    # TODO: change MIDI instruments to SATB voices and validate pitch ranges + tessituras
     print("Hello, world!")
     path = input("Enter the path to the MIDI file: ").replace('"', '')
     output = process_midi(path)

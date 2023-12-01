@@ -53,8 +53,8 @@ def plot_histories(model, feature1, feature2, title, ylabel, filename=None):
         plt.savefig(filename)
 
 
-def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, choral=False, suffix="",
-                         temperature=0.5, key=None, time_sig=None, verify_voices=False, tempo: int = None):
+def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3,
+                         choral=False, suffix="", temperature=0.5, verify_voices=False):
 
     DATAPATH = f"Weights/Composition/{dataset}" if not choral else f"Weights/Composition_Choral{suffix}"
     with open(f"{DATAPATH}/{dataset}_notes_vocab.pkl", "rb") as f:
@@ -63,23 +63,17 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
         durations_vocab = pkl.load(f)
 
     # model = build_model(len(notes_vocab), len(durations_vocab), feed_forward_dim=512, num_heads=8)
-    if suffix in ["_Mini", "_Tiny"]:
-        model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512, key_dim=64,
-                            dropout_rate=0.0, l2_reg=0.0005, num_transformer_blocks=2, gradient_clip=1.5, num_heads=12)
-    elif suffix == "_Micro":
-        model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512, key_dim=64,
-                            dropout_rate=0.3, l2_reg=0.0005, num_transformer_blocks=1, gradient_clip=1.5, num_heads=8)
-    elif suffix == "_Transposed2":
+    if suffix == "_Transposed2":
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.3, l2_reg=1e-4, num_transformer_blocks=3, num_heads=8)
-    elif suffix == "_Transposed3":
+    elif suffix in ["_Transposed3", "_Transposed12", "_Transposed13", "_Transposed14", "_Transposed15"]:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512, key_dim=64,
                             num_heads=8, dropout_rate=0.5, l2_reg=0.0005, num_transformer_blocks=3, gradient_clip=1.5)
     elif suffix == "_Transposed4":
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=1024, feed_forward_dim=1024,
                             key_dim=64, dropout_rate=0.4, l2_reg=1.4910815e-05, num_transformer_blocks=3,
                             num_heads=12, gradient_clip=1.5)
-    elif suffix in ["_Transposed5", "_Transposed7", "_Transposed9"]:
+    elif suffix in ["_Transposed5", "_Transposed7", "_Transposed9", "_Transposed10", "_Transposed11"]:
         model = build_model(len(notes_vocab), len(durations_vocab), embedding_dim=512, feed_forward_dim=512,
                             key_dim=128, dropout_rate=0.0, l2_reg=1e-6, num_transformer_blocks=3, num_heads=8,
                             gradient_clip=1.5)
@@ -93,14 +87,10 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
     model.load_weights(f"Weights/Composition_Choral{suffix}/checkpoint.ckpt")
     music_gen = MusicGenerator(notes_vocab, durations_vocab, generate_len=generate_len,
                                choral=choral, verbose=True, top_k=30)
-    provided_key = key is not None
-    provided_time_sig = time_sig is not None
-    provided_tempo = tempo is not None
 
     def fail(filename=None):
         os.remove(filename)
         print("Failed to generate piece; retrying...")
-        key, time_sig, tempo = None, None, None
 
     for i in range(num_to_generate):
         while True:
@@ -109,26 +99,8 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
                                           temperature=temperature, model=model)
                 midi_stream = info[-1]["midi"]  # .chordify()
             else:
-                entrances = []
-                for voice in ["Soprano", "Alto", "Tenor", "Bass"]:
-                    t_key, t_time_sig, t_tempo, entrance = validate_and_generate_metatrack(voice, key, time_sig, tempo)
-                    entrances.append(entrance)
-                    if voice == "Soprano":
-                        key = t_key if key is None else key
-                        time_sig = t_time_sig if time_sig is None else time_sig
-                        tempo = t_tempo if tempo is None else tempo
-                    tempo = f"{tempo}BPM" if isinstance(tempo, int) else tempo
-                entrances[np.argmin(entrances)] = 0
-                # print(f"Generating choral piece with key={key}, time_sig={time_sig}, "
-                #       f"tempo={tempo}, entrances={entrances}...")
-                # print(f"Generating choral piece with tempo={tempo}...")
-                start_notes = ["S:START", "A:START", "T:START", "B:START"]  # , tempo
-                start_durations = ["0.0", "0.0", "0.0", "0.0"]  # , "0.0"
-                # start_notes = ["S:START", "A:START", "T:START", "B:START", key, time_sig, tempo]
-                # "S:rest", "A:rest", "T:rest", "B:rest"]
-                # start_durations = ["0.0", "0.0", "0.0", "0.0", "0.0", "0.0", "0.0"]  # + \
-                # [str(entrance) for entrance in entrances]
-                # start_durations = [str(entrance) for entrance in entrances] + ["0.0", "0.0", "0.0"]
+                start_notes = ["S:START", "A:START", "T:START", "B:START"]
+                start_durations = ["0.0", "0.0", "0.0", "0.0"]
                 info, midi_stream = music_gen.generate(start_notes, start_durations, max_tokens=generate_len,
                                                        temperature=temperature, model=model, intro=True)
             timestr = time.strftime("%Y%m%d-%H%M%S")
@@ -152,9 +124,6 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
                         fail(filename)
                         continue
                 break
-        key = None if not provided_key else key
-        time_sig = None if not provided_time_sig else time_sig
-        tempo = None if not provided_tempo else tempo
         gc.collect()
         print(f"Generated piece {i+1}/{num_to_generate}")
     pass
@@ -213,12 +182,10 @@ def build_model_tuner(hp, notes_vocab_size, durations_vocab_size):
 def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     """Trains a choral Transformer model to generate notes and durations."""
     BATCH_SIZE = 128
-    # DATASET_REPETITIONS = 2
     GENERATE_LEN = 25
     INCLUDE_AUGMENTED = False
     DATAPATH = "Data/Glob/Combined_choral" if not transposed else "Data/Glob/Combined_transposed"
     VALIDATION_SPLIT = 0.1
-    WEIGHT_DECAY = 1e-4
 
     def merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=50, max_rest_len=4):
         merged_notes = []
@@ -228,12 +195,6 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
         # for voice in voice_parts_notes:
         #     voice_parts_notes[voice] = voice_parts_notes[voice][:min_length]
         #     voice_parts_durations[voice] = voice_parts_durations[voice][:min_length]
-        # Old design: put notes in voice order ([S, S, S, ..., A, A, A, ..., T, T, T, ..., B, B, B, ...], ...)
-        # for idx in range(len(voice_parts_notes["S"])):
-        #     note_str = " ".join([voice_parts_notes[voice][idx] for voice in voice_parts_notes])
-        #     duration_str = " ".join([voice_parts_durations[voice][idx] for voice in voice_parts_durations])
-        #     merged_notes.append(note_str)
-        #     merged_durations.append(duration_str)
         # New design attempt 1 -- put notes in cross-voice order ([S, A, T, B, S, A, T, B], ...)
         notes_sequences = {"S": [], "A": [], "T": [], "B": []}
         durations_sequences = {"S": [], "A": [], "T": [], "B": []}
@@ -241,8 +202,6 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
         #     for voice in voice_parts_notes:
         for voice in voice_parts_notes:
             for i in range(len(voice_parts_notes[voice])):
-                # notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
-                # durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
                 if max_rest_len is None:
                     notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
                     durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
@@ -276,21 +235,6 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
         for i in range(0, len(note_parts_combined), seq_len):
             merged_notes.append(' '.join(note_parts_combined[i:i + seq_len]))
             merged_durations.append(' '.join(duration_parts_combined[i:i + seq_len]))
-        # New design attempt 2 -- combine cross-voice notes into one token (S:Note;A:Note;T:Note;B:Note)
-        # combined_tokens = []
-        # for i in range(min_length):
-        #     # Create the combined token for each index i
-        #     combined_note = ";".join([f"{voice}:{voice_parts_notes[voice][i]}" for voice in ['S', 'A', 'T', 'B']])
-        #     combined_duration = ";".join(
-        #         [f"{voice}:{voice_parts_durations[voice][i]}" for voice in ['S', 'A', 'T', 'B']])
-        #     combined_tokens.append((combined_note, combined_duration))
-        #
-        # # Chunk the combined SATB tokens into sequences of specified length
-        # for i in range(0, len(combined_tokens), seq_len):
-        #     notes_chunk = " ".join([token[0] for token in combined_tokens[i:i + seq_len]])
-        #     durations_chunk = " ".join([token[1] for token in combined_tokens[i:i + seq_len]])
-        #     merged_notes.append(notes_chunk)
-        #     merged_durations.append(durations_chunk)
         return merged_notes, merged_durations
 
     voices = ["S", "A", "T", "B"]
@@ -307,7 +251,7 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
                 voice_parts_notes[voice] += aug_notes
                 voice_parts_durations[voice] += aug_dur
 
-    notes, durations = merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=52)  # seq_len=52
+    notes, durations = merge_voice_parts(voice_parts_notes, voice_parts_durations, seq_len=52)  # seq_len=32, 52, 100
     DATARANGE = .25  # May be better to shrink the dataset here rather than after tokenizing
     notes = notes[:int(DATARANGE * len(notes))]
     durations = durations[:int(DATARANGE * len(durations))]
@@ -399,33 +343,17 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     # model = hyperparameter_search(grid_search=False, tuner_trials=15, t_epochs=50,
     #                               resume=False, t_suffix="_9", dataset_size=1.0)
     gc.collect()
-    # Best Transposed model (.125 and .25 datasets)
-    # Switched dropout rate from 0.2 to 0.1 at epoch 250, then to 0.05/l2 2e-5 at epoch 275, then 0.0025/1.5e-5 at 300,
-    # then 0.00125/1e-5 at 325, then 0.0005/1e-6 at 350, then 0.00025 at 375, then 0.000125 at 400, finally 5e-5 at 450
+    # Best Transposed model (.125 [models 5, 10] and .25 [9] datasets);  original key_dim=128
     model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=8,
-                        key_dim=128, dropout_rate=0.00005, l2_reg=1e-6, num_transformer_blocks=3, gradient_clip=1.5)
-    # Best Transposed model (tiny dataset)
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=12
-    #                     key_dim=64, dropout_rate=0.2, l2_reg=0.00002, num_transformer_blocks=2, gradient_clip=0.5)
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=1024, feed_forward_dim=1024,
-    #                     num_heads=12, key_dim=64, dropout_rate=0.4, l2_reg=1.4910815e-05, num_transformer_blocks=3,
-    #                     gradient_clip=1.5)
-    # model = build_model(notes_vocab_size, durations_vocab_size, feed_forward_dim=512, num_heads=8)
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
-    #                    key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=2, gradient_clip=1.5)
+                        key_dim=64, dropout_rate=0.000001, l2_reg=1e-6, num_transformer_blocks=3, gradient_clip=1.5)
     # Transposed model (original has 2 transformer blocks, #2 has 3)
     # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=1024, num_heads=8,
     #                    key_dim=64, dropout_rate=0.3, l2_reg=WEIGHT_DECAY, num_transformer_blocks=3, gradient_clip=1.5)
-    # Micro and Tiny models
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=12,
-    #                     key_dim=64, dropout_rate=0.4, l2_reg=0.0005, num_transformer_blocks=2, gradient_clip=1.5)
-    # model = build_model(notes_vocab_size, durations_vocab_size, embedding_dim=512, feed_forward_dim=512, num_heads=8,
-    #                     key_dim=64, dropout_rate=0.3, l2_reg=0.0005, num_transformer_blocks=1, gradient_clip=1.5)
     plot_model(model, to_file=f'Images/Combined_choral_composition{suffix.lower()}_model.png',
                show_shapes=True, show_layer_names=True, expand_nested=True)
 
-    LOAD_MODEL = True
-    if LOAD_MODEL:
+    LOAD_MODEL = False
+    if LOAD_MODEL and os.path.exists(f"Weights/Composition_Choral{suffix}"):
         model.load_weights(f"Weights/Composition_Choral{suffix}/checkpoint.ckpt")
         print("Loaded model weights")
 
@@ -437,9 +365,6 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
     # Tokenize starting prompt
     music_generator = MusicGenerator(notes_vocab, durations_vocab, generate_len=GENERATE_LEN, choral=True)
 
-    # DATARANGE = 1.0  # 0.5 mini; 0.25 tiny; 0.1 micro
-    # train_ds = train_ds.take(int(DATARANGE * train_size))
-    # val_ds = val_ds.take(int(DATARANGE * (ds_size - train_size)))
     # Train the model
     model.fit(train_ds, validation_data=val_ds, epochs=epochs, verbose=1,
               callbacks=[checkpoint_callback, early_stopping, tensorboard_callback])  # , music_generator
@@ -1212,12 +1137,12 @@ if __name__ == '__main__':
     # generate_intro(dataset="Soprano", generate_len=30, temperature=0.7)
     # train_composition_model("Combined", epochs=100, load_augmented_dataset=True)
     # generate_composition("Combined_augmented", num_to_generate=5, generate_len=200, temperature=2.75)
-    # train_choral_composition_model(epochs=50, suffix="_Transposed9", transposed=True)
+    # train_choral_composition_model(epochs=300, suffix="_Transposed15", transposed=True)
     generate_composition("Combined_choral", num_to_generate=10, generate_len=200, choral=True,
-                         temperature=.65, suffix="_Transposed9")
-    # for tempr in [0.55, 0.65, 0.75, 0.95]:  # 0.55, ... , 1.0
+                         temperature=.65, suffix="_Transposed3")
+    # for tempr in [0.65, 0.55, 0.45]:  # 0.55, ... , 1.0
     #     generate_composition("Combined_choral", num_to_generate=5, generate_len=200,
-    #                          choral=True, temperature=tempr, suffix="_Transposed9")
+    #                          choral=True, temperature=tempr, suffix="_Transposed2")
     # train_markov_composition_model()
     # generate_composition_bpe()
     # train_choral_transformer(epochs=100)

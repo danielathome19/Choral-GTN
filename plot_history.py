@@ -36,8 +36,8 @@ if __name__ == "__main__":
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.title("Loss vs. Epoch")
-    plt.ylim(0, 6)  # 6.5
-    for i in range(0, len(loss), 50):  # 25
+    plt.ylim(0, 6.25)  # 6.5
+    for i in range(0, len(loss), 25):  # 50
         if i == 0:
             i += 1
         plt.text(i, loss[i], "{:.3f}".format(loss[i]), ha="center", va="bottom", fontsize=8)
@@ -46,6 +46,6 @@ if __name__ == "__main__":
         plt.text(i, duration_outputs_loss[i]-offset, "{:.3f}".format(duration_outputs_loss[i]),
                  ha="center", va="bottom", fontsize=8)
     plt.legend()
-    plt.savefig(os.path.join(os.getcwd(), "Images/Combined_choral_transposed9_composition_model_history.png"))
+    plt.savefig(os.path.join(os.getcwd(), "Images/Combined_choral_transposed15_composition_model_history.png"))
     plt.show()
     pass
