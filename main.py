@@ -99,6 +99,7 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
                 break
         gc.collect()
         print(f"Generated piece {i+1}/{num_to_generate}")
+
     return output_filenames
 
 
