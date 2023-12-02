@@ -1,16 +1,16 @@
 # About
-Choral-GENN is a deep learning system () trained to ____.
+Choral-GTN is a deep learning system () trained to ____.
 
 To find out more, check out the provided research paper:
   * **Doctoral Dissertation**: "Choral Music Generation: A Deep Hybrid Learning Approach" (DOI: [TBD](#)) 
   * **Conference Paper**: "TBD" (DOI: [TBD](#))
-  * Also contained in the ["PaperAndPresentation"](https://github.com/danielathome19/Choral-GENN/tree/master/PaperAndPresentation) folder is the dissertation paper, conference paper (and supplement), and presentation of the research.
+  * Also contained in the ["PaperAndPresentation"](https://github.com/danielathome19/Choral-GTN/tree/master/PaperAndPresentation) folder is the dissertation paper, conference paper (and supplement), and presentation of the research.
   * The dissertation defense can be watched at TBA.
 
 # Usage
 See:
   * TBD for a live demo of the full prediction system.
-  * https://github.com/danielathome19/Choral-GENN/releases for a downloadable local demo of the prediction system.
+  * https://github.com/danielathome19/Choral-GTN/releases for a downloadable local demo of the prediction system.
 
 For data used in my experiments:
   * All datasets can be found in 
