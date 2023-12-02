@@ -151,7 +151,7 @@ def create_all_datasets():
 # endregion Dataframes
 
 
-# region VoiceTransformer
+# region ChoralTransformer
 def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False,
                             limit=None, mm_limit=0, include_key=True):
     all_voices_data = {'S': [], 'A': [], 'T': [], 'B': []}
@@ -680,120 +680,6 @@ def unify_transpose_midi_files(path):
 # endregion VoiceTransformer
 
 
-# region ChoralTransformer
-def extract_and_encode_midi(file_path, seq_len=-1, parsed_data_path=None, verbose=False, limit=None):
-    file_list = glob.glob(file_path + "/*.mid")
-    parser = music21.converter
-
-    voice_mapping = {'Soprano': 0, 'Alto': 1, 'Tenor': 2, 'Bass': 3}
-
-    print(f"Parsing {len(file_list)} midi files...")
-
-    if limit is not None:
-        file_list = file_list[:limit]
-
-    all_midi_data = []
-
-    for j, file in enumerate(file_list):
-        if verbose:
-            print(j + 1, "Parsing %s" % file)
-        try:
-            midi = parser.parse(file)
-
-            interleaved_data = {'events': []}  # Reset for each file
-
-            for part, voice in zip(midi.parts, voice_mapping.keys()):
-                # if part.partName and part.partName in voice_mapping:  # Check if part name is recognizable
-                #     voice_type = voice_mapping[part.partName]
-                # else:  # If part name is not recognizable, skip it
-                #     continue
-
-                offset_counter = 0
-                interleaved_data['events'].append([voice, 'START', None, None, 0])
-
-                for element in part.flat.notesAndRests:
-                    # Skipping parts with complex time signatures
-                    if any([ts.numerator > 12 for ts in part.getTimeSignatures()]):
-                        continue
-
-                    # Handling the case where metadata appears at the same offset as notes/rests
-                    if element.offset > offset_counter:
-                        # Extract metadata from range [offset_counter, element.offset]
-                        for meta_element in part.flat.getElementsByOffset(offset_counter, element.offset,
-                                                                          classList=['TimeSignature', 'KeySignature',
-                                                                                     'MetronomeMark']):
-                            if isinstance(meta_element, music21.meter.TimeSignature):
-                                time_signature = meta_element.numerator / meta_element.denominator
-                                interleaved_data['events'].append([voice, 4, time_signature, 0.0, offset_counter])
-                            elif isinstance(meta_element, music21.key.KeySignature):
-                                interleaved_data['events'].append([voice, 2, meta_element.sharps, 0.0, offset_counter])
-                            elif isinstance(meta_element, music21.tempo.MetronomeMark):
-                                interleaved_data['events'].append([voice, 3, meta_element.number, 0.0, offset_counter])
-                        offset_counter = element.offset
-                    if element.isNote:
-                        interleaved_data['events'].append(
-                            [voice, 1, element.pitch.midi, element.quarterLength, offset_counter])
-                    elif element.isRest:
-                        interleaved_data['events'].append([voice, 0, 0, element.quarterLength, offset_counter])
-                    offset_counter += element.quarterLength
-                # interleaved_data['events'].append([voice, 'END', None, None, 0])
-
-            # Sort and optionally split the events, then append to all_midi_data
-            interleaved_data['events'] = sorted(interleaved_data['events'], key=lambda x: x[-1])
-            interleaved_data['events'].append(["Soprano", 'END', None, None, interleaved_data['events'][-1][-1] + 1])
-
-            if seq_len != -1:
-                for i in range(0, len(interleaved_data['events']), seq_len):
-                    sequence = interleaved_data['events'][i:i + seq_len]
-                    if len(sequence) == seq_len:
-                        all_midi_data.append(sequence)
-            else:
-                all_midi_data.append(interleaved_data['events'])
-        except Exception as e:
-            print(f"\tError parsing file {file}: {e}")
-
-    if parsed_data_path is not None:
-        with open(parsed_data_path, 'wb') as handle:
-            pkl.dump(all_midi_data, handle, protocol=pkl.HIGHEST_PROTOCOL)
-
-    return all_midi_data
-
-
-def decode_token_to_music21(token):
-    voice, event_type, data, duration, offset = token
-    voice_mapping = {0: 'Soprano', 1: 'Alto', 2: 'Tenor', 3: 'Bass'}
-    if isinstance(voice, int):
-        voice = voice_mapping[voice]
-    music21_obj = None
-    duration_obj = None
-
-    # Decode based on event type
-    if event_type == 1:  # Note
-        pitch = int(data)  # Ensure pitch is integer
-        music21_obj = music21.note.Note(pitch)
-        duration_obj = music21.duration.Duration(duration)
-    elif event_type == 0:  # Rest
-        music21_obj = music21.note.Rest()
-        duration_obj = music21.duration.Duration(duration)
-    elif event_type == 2:  # Key Signature
-        music21_obj = music21.key.KeySignature(data)
-    elif event_type == 3:  # Metronome Mark (Tempo)
-        music21_obj = music21.tempo.MetronomeMark(number=data)
-    elif event_type == 4:  # Time Signature
-        music21_obj = music21.meter.TimeSignature(f"{int(data)}/4")
-    else:
-        # Handle other cases (e.g., START, END)
-        # print("Non-note/rest/token encountered:", token)
-        return None, None
-
-    if duration is not None and duration_obj is None:
-        duration_obj = music21.duration.Duration(duration)
-
-    return music21_obj, duration_obj
-
-# endregion ChoralTransformer
-
-
 if __name__ == "__main__":
     print("Hello, world!")
     # data_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Tenor\Isolated\534_001393_tenT.mid")
@@ -850,6 +736,4 @@ if __name__ == "__main__":
     #     meta_analysis(voice)
     # view_meta_analysis("Soprano")
     # combine_intros()
-    # extract_and_encode_midi("Data/MIDI/VoiceParts/Combined", verbose=True, seq_len=-1,
-    #                         parsed_data_path="Data/Glob/Choral/Choral.pkl")
     pass
