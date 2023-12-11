@@ -41,7 +41,7 @@ if not sys.warnoptions:
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3,
+def generate_composition(dataset="Combined_choral", generate_len=50, num_to_generate=3, seed_notes=[], seed_durs=[],
                          choral=False, suffix="", temperature=0.5, verify_voices=False):
     DATAPATH = f"Weights/Composition/{dataset}" if not choral else f"Weights/Composition_Choral{suffix}"
     with open(f"{DATAPATH}/{dataset}_notes_vocab.pkl", "rb") as f:
@@ -73,6 +73,9 @@ def generate_composition(dataset="Combined_choral", generate_len=50, num_to_gene
             else:
                 start_notes = ["S:START", "A:START", "T:START", "B:START"]
                 start_durations = ["0.0", "0.0", "0.0", "0.0"]
+                if len(seed_notes) > 0 and len(seed_durs) > 0:
+                    start_notes += seed_notes
+                    start_durations += seed_durs
                 info, midi_stream = music_gen.generate(start_notes, start_durations, max_tokens=generate_len,
                                                        temperature=temperature, model=model, intro=True)
             timestr = time.strftime("%Y%m%d-%H%M%S")
@@ -541,8 +544,20 @@ def generate_main():
     generate_len = int(input("Enter the length of each piece [around 100-200 works best; 200 by default]: ") or 200)
     temperature = float(input("Enter the temperature to use [0.5-1.0; 0.65 by default]: ") or 0.65)
     suffix = input("Enter the model suffix [_Transposed2, _Transposed13; _Transposed3 by default]: ") or "_Transposed3"
+    do_seed = input("Do you want to seed the generation with a specific sequence? [y/n; n by default]: ") or "n"
+    if do_seed == "y":
+        seed_notes = input("\tEnter notes, alternating SATB (e.g., \"S:C5 A:B-3 T:E4 B:rest S:B4 A:G3 T:F#4 B:F3\"): ")
+        seed_durs = input("\tEnter durations (as float, where 1.0 = quarter note; e.g., 4.0 2.0 4.0 1.0 1.0 0.5 ...): ")
+        seed_notes = seed_notes.split(" ")
+        seed_durs = seed_durs.split(" ")
+        if len(seed_notes) != len(seed_durs):
+            raise ValueError("Seed notes and durations must be the same length!")
+    else:
+        seed_notes = []
+        seed_durs = []
     output_files = generate_composition(DATASET, generate_len=generate_len, num_to_generate=num_to_gen,
-                                        choral=True, suffix=suffix, temperature=temperature)
+                                        choral=True, suffix=suffix, temperature=temperature,
+                                        seed_notes=seed_notes, seed_durs=seed_durs)
     print("Generated the following files:", output_files, "\nPlease post-process the ones you like best.")
 
 
