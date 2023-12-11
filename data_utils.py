@@ -152,6 +152,91 @@ def create_all_datasets():
 
 
 # region ChoralTransformer
+def parse_single_midi_to_notedur_output():
+    filepath = input("Enter the path to the MIDI file: ").replace('"', '')
+    datalen = float(input("What percentage of the file would you like to return? (0-100; 100% by default): ") or 100.0)
+    datalen = datalen / 100.0 if datalen >= 1 else datalen
+    max_rests = int(input("What is the max number of consecutive rests allowed? (12 by default; -1 for all): ") or 12)
+    max_rests = None if max_rests == -1 else max_rests
+
+    parser = music21.converter
+    seq_len = 50
+    all_voices_data = {'S': [], 'A': [], 'T': [], 'B': []}
+    score = parser.parse(filepath)
+    for part, voice in zip(score.parts, all_voices_data.keys()):
+        notes = []
+        durations = []
+        for element in part.flat:
+            note_name = None
+            duration_name = None
+            if isinstance(element, music21.note.Rest):
+                note_name = voice + ":" + str(element.name)
+                duration_name = str(element.duration.quarterLength)
+            elif isinstance(element, music21.note.Note):
+                note_name = voice + ":" + str(element.nameWithOctave)
+                duration_name = str(element.duration.quarterLength)
+            if note_name and duration_name:
+                notes.append(note_name)
+                durations.append(duration_name)
+        for j in range(len(notes) - seq_len):
+            all_voices_data[voice].append({
+                'notes': " ".join(notes[j: (j + seq_len)]),
+                'durations': " ".join(durations[j: (j + seq_len)])
+            })
+
+    def merge_voice_parts(voice_parts_notes, voice_parts_durations, max_rest_len=12):
+        merged_notes = []
+        merged_durations = []
+        notes_sequences = {"S": [], "A": [], "T": [], "B": []}
+        durations_sequences = {"S": [], "A": [], "T": [], "B": []}
+        for voice in voice_parts_notes:
+            for i in range(len(voice_parts_notes[voice])):
+                if max_rest_len is None:
+                    notes_sequences[voice] += voice_parts_notes[voice][i].split(" ")
+                    durations_sequences[voice] += voice_parts_durations[voice][i].split(" ")
+                else:
+                    split_notes = voice_parts_notes[voice][i].split(" ")
+                    split_durations = voice_parts_durations[voice][i].split(" ")
+                    rest_cnt = 0
+                    for j in range(len(split_notes)):
+                        if "rest" in split_notes[j]:
+                            rest_cnt += 1
+                        else:
+                            rest_cnt = 0
+                        if rest_cnt <= max_rest_len:
+                            notes_sequences[voice].append(split_notes[j])
+                            durations_sequences[voice].append(split_durations[j])
+                pass
+        min_length = min([len(notes_sequences[voice]) for voice in notes_sequences])
+        for voice in notes_sequences:
+            notes_sequences[voice] = notes_sequences[voice][:min_length]
+            durations_sequences[voice] = durations_sequences[voice][:min_length]
+        note_parts_combined = []
+        duration_parts_combined = []
+        for i in range(0, min_length * 4, 4):
+            if i + 4 > min_length * 4:
+                break
+            for part in ['S', 'A', 'T', 'B']:
+                note_parts_combined.extend(notes_sequences[part][i // 4:i // 4 + 1])
+                duration_parts_combined.extend(durations_sequences[part][i // 4:i // 4 + 1])
+        merged_notes.append(' '.join(note_parts_combined))
+        merged_durations.append(' '.join(duration_parts_combined))
+        return merged_notes, merged_durations
+
+    all_notes = {"S": [], "A": [], "T": [], "B": []}
+    all_durations = {"S": [], "A": [], "T": [], "B": []}
+    for voice, data in all_voices_data.items():
+        for entry in data:
+            all_notes[voice].append(entry['notes'])
+            all_durations[voice].append(entry['durations'])
+    notes, durations = merge_voice_parts(all_notes, all_durations, max_rest_len=max_rests)
+    str_notes = ' '.join(notes).split(" ")
+    str_notes = ' '.join(str_notes[:int(len(str_notes) * datalen)])
+    str_durations = ' '.join(durations).split(" ")
+    str_durations = ' '.join(str_durations[:int(len(str_durations) * datalen)])
+    print(f"\nNotes:\n{str_notes}\n\nDurations:\n{str_durations}")
+
+
 def parse_choral_midi_files(file_list, parser, seq_len, parsed_data_path=None, verbose=False,
                             limit=None, mm_limit=0, include_key=True):
     all_voices_data = {'S': [], 'A': [], 'T': [], 'B': []}
@@ -676,12 +761,12 @@ def unify_transpose_midi_files(path):
         except Exception as e:
             print(f"\tError parsing file {file}: {e}")
 
-
 # endregion VoiceTransformer
 
 
 if __name__ == "__main__":
     print("Hello, world!")
+    parse_single_midi_to_notedur_output()
     # data_path = os.path.join(os.getcwd(), r"Data\MIDI\VoiceParts\Tenor\Isolated\534_001393_tenT.mid")
     # df_mid = midi_to_dataframe(data_path)
     # pd.set_option('display.max_rows', None)

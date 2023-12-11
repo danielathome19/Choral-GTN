@@ -361,7 +361,7 @@ if __name__ == "__main__":
                        "(\033[4my\033[0mes/\033[4mn\033[0mo/\033[4mr\033[0mandom): ")
     if key_option.lower() in "yes":
         n_key = input("Enter the key to change to (not including mode; e.g., C, D, Ab, F#): ")
-    elif key_option.lower() in "random":
+    elif key_option.lower() != "no" and key_option.lower() in "random":
         n_key = get_new_key_and_bpm()[0].split(':')[0]
         print(f"Randomly selected key: {n_key}")
     else:

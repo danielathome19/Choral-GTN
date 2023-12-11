@@ -545,9 +545,9 @@ def generate_main():
     temperature = float(input("Enter the temperature to use [0.5-1.0; 0.65 by default]: ") or 0.65)
     suffix = input("Enter the model suffix [_Transposed2, _Transposed13; _Transposed3 by default]: ") or "_Transposed3"
     do_seed = input("Do you want to seed the generation with a specific sequence? [y/n; n by default]: ") or "n"
-    if do_seed == "y":
+    if do_seed == "y":  # See the data_utils script to convert a MIDI file to a seed
         seed_notes = input("\tEnter notes, alternating SATB (e.g., \"S:C5 A:B-3 T:E4 B:rest S:B4 A:G3 T:F#4 B:F3\"): ")
-        seed_durs = input("\tEnter durations (as float, where 1.0 = quarter note; e.g., 4.0 2.0 4.0 1.0 1.0 0.5 ...): ")
+        seed_durs = input("\tEnter durations (as float, where 1.0 = quarter note; e.g., 4.0 2.0 1/3 1.0 1.0 0.5 ...): ")
         seed_notes = seed_notes.split(" ")
         seed_durs = seed_durs.split(" ")
         if len(seed_notes) != len(seed_durs):
