@@ -371,5 +371,4 @@ if __name__ == "__main__":
         mode = change_bpm_and_key(output, output, n_bpm, n_key)
         keymsg = "" if n_key is None else f" and key ({n_key} {mode})"
         print(f"Finished changing BPM{keymsg}.")
-
     pass

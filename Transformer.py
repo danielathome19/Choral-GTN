@@ -291,6 +291,7 @@ class MusicGenerator(callbacks.Callback):
                         voice_streams["S"].append(new_note)
                     else:
                         voice_streams[voice_type].append(new_note)
+            pass
 
             if intro:
                 info.append({
@@ -338,6 +339,7 @@ class MusicGenerator(callbacks.Callback):
                             voice_streams["S"].append(new_note)
                         else:
                             voice_streams[voice_type].append(new_note)
+                pass
 
                 _, att = attention_model.predict([x1, x2], verbose=0)
 
@@ -349,6 +351,7 @@ class MusicGenerator(callbacks.Callback):
                     "duration_probs": duration_probs,
                     "atts": att[0, :, -1, :],
                 })
+
                 start_note_tokens.append(sample_note_idx)
                 start_duration_tokens.append(sample_duration_idx)
                 start_notes.append(sample_note)
