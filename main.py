@@ -187,7 +187,7 @@ def train_choral_composition_model(epochs=100, suffix="", transposed=False):
                             notes_sequences[voice].append(split_notes[j])
                             durations_sequences[voice].append(split_durations[j])
                 pass
-        # # Attempt 1.75 -- truncate to the minimum length after removing rests (not working as intended yet)
+        # Attempt 1.75 -- truncate to the minimum length after removing rests
         min_length = min([len(notes_sequences[voice]) for voice in notes_sequences])
         for voice in notes_sequences:
             notes_sequences[voice] = notes_sequences[voice][:min_length]
