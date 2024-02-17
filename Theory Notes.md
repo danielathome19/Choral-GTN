@@ -91,7 +91,7 @@ III. ROOTS A THIRD APART
 
 * The Five Species
   1. First Species (Note Against Note)
-     * Each note in the counterpoint has the same duration as its corresponding note in the cantus firmus.
+     * Each note in the counterpoint has the same duration as its corresponding note in the cantus firmus (the fixed, pre-existing 'basis' melody).
   2. Second Species (Two Notes Against One)
      * For every note in the cantus firmus, there are two notes in the counterpoint.
   3. Third Species (Four Notes Against One)
