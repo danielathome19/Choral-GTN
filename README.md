@@ -5,7 +5,7 @@ To find out more, check out the provided research paper:
   * **Doctoral Dissertation**: "Choral Music Generation: A Deep Hybrid Learning Approach" (DOI: [TBD](#)) 
   * **Conference Paper**: "TBD" (DOI: [TBD](#))
   * Also contained in the ["PaperAndPresentation"](https://github.com/danielathome19/Choral-GTN/tree/master/PaperAndPresentation) folder is the dissertation paper, conference paper (and supplement), and presentation of the research.
-  * The dissertation defense can be watched at TBA.
+  * The dissertation defense can be watched at https://youtu.be/Rk9koF0V-2M.
 
 # Usage
 See:
