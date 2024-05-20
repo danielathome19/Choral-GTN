@@ -1,5 +1,5 @@
 # About
-Choral-GTN is a deep learning system () trained to ____.
+Choral-GTN is a deep learning system (comprised of a hybrid Generative Transformer Network architecture, Music Generator Callback Interface, and Rule-based Post-Processing Script) trained to generate realistic four-part (SATB) classical choral music. The system also provides a new dataset, the **Choral Harmony Optimized Repository for AI Learning (CHORAL) Database**, that provides the four isolated voice parts and their concatenation for 1000 unique pieces of classical choral music.
 
 To find out more, check out the provided research paper:
   * **Doctoral Dissertation**: "Choral Music Generation: A Deep Hybrid Learning Approach" (DOI: [10.13140/RG.2.2.10418.62400](http://doi.org/10.13140/RG.2.2.10418.62400)) 
