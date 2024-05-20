@@ -62,7 +62,7 @@ or the *dataset* (**Choral Harmony Optimized Repository for AI Learning (CHORAL)
  author = {Szelogowski, Daniel},
  doi = {10.13140/RG.2.2.10418.62400},
  month = {March},
- title = {{CHORAL-Dataset-And-Choral-GTN}},
+ title = {{CHORAL-Database-And-Choral-GTN}},
  license = {CC0-1.0},
  url = {https://github.com/danielathome19/Choral-GTN},
  year = {2024}
