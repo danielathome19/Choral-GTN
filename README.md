@@ -2,9 +2,9 @@
 Choral-GTN is a deep learning system () trained to ____.
 
 To find out more, check out the provided research paper:
-  * **Doctoral Dissertation**: "Choral Music Generation: A Deep Hybrid Learning Approach" (DOI: [TBD](#)) 
-  * **Conference Paper**: "TBD" (DOI: [TBD](#))
-  * Also contained in the ["PaperAndPresentation"](https://github.com/danielathome19/Choral-GTN/tree/master/PaperAndPresentation) folder is the dissertation paper, conference paper (and supplement), and presentation of the research.
+  * **Doctoral Dissertation**: "Choral Music Generation: A Deep Hybrid Learning Approach" (DOI: [10.13140/RG.2.2.10418.62400](http://doi.org/10.13140/RG.2.2.10418.62400)) 
+  * **Journal Paper**: "TBD" (DOI: [TBD](#))
+  * Also contained in the ["PaperAndPresentation"](https://github.com/danielathome19/Choral-GTN/tree/master/PaperAndPresentation) folder is the dissertation paper, journal paper (and supplement), and presentation of the research.
   * The dissertation defense can be watched at https://youtu.be/Rk9koF0V-2M.
 
 # Usage
@@ -13,7 +13,7 @@ See:
   * https://github.com/danielathome19/Choral-GTN/releases for a downloadable local demo of the prediction system.
 
 For data used in my experiments:
-  * All datasets can be found in 
+  * All datasets can be found in **Data**.
   * My most recent pre-trained weights can be found in **Weights**.
 
 **NOTE:** these folders should be placed in the **same** folder as "main.py". For folder existing conflicts, simply merge the directories.
@@ -41,13 +41,30 @@ The database was compiled from free and open sources with respect to the origina
 # Citation
 If you use this code for your research, please cite this project as either the *dissertation* (**Choral Music Generation: A Deep Hybrid Learning Approach**):
 ```
+@software{Szelogowski_Choral-GTN_2024,
+ author = {Szelogowski, Daniel},
+ doi = {10.13140/RG.2.2.10418.62400},
+ month = {March},
+ title = {{Form-NN}},
+ license = {CC0-1.0},
+ url = {https://github.com/danielathome19/Choral-GTN},
+ version = {1.0.0},
+ year = {2024}
+}
+```
+or the *journal paper* ():
+```
 
 ```
-or the *conference paper* (**TBD**):
+or the *dataset* (**Choral Harmony Optimized Repository for AI Learning (CHORAL) Database**):
 ```
-
-```
-or the *dataset* ():
-```
-
+@misc{Szelogowski_CHORAL-Dataset-And-Choral-GTN_2024,
+ author = {Szelogowski, Daniel},
+ doi = {10.13140/RG.2.2.10418.62400},
+ month = {March},
+ title = {{CHORAL-Dataset-And-Choral-GTN}},
+ license = {CC0-1.0},
+ url = {https://github.com/danielathome19/Choral-GTN},
+ year = {2024}
+}
 ```
