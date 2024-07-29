@@ -40,7 +40,7 @@ The database was compiled from free and open sources with respect to the origina
 
 # Citation
 If you use this code for your research, please cite this project as either the *dissertation* (**Choral Music Generation: A Deep Hybrid Learning Approach**):
-```
+```bibtex
 @software{Szelogowski_Choral-GTN_2024,
  author = {Szelogowski, Daniel},
  doi = {10.13140/RG.2.2.10418.62400},
@@ -53,11 +53,11 @@ If you use this code for your research, please cite this project as either the *
 }
 ```
 or the *journal paper* ():
-```
+```bibtex
 
 ```
 or the *dataset* (**Choral Harmony Optimized Repository for AI Learning (CHORAL) Database**):
-```
+```bibtex
 @misc{Szelogowski_CHORAL-Dataset-And-Choral-GTN_2024,
  author = {Szelogowski, Daniel},
  doi = {10.13140/RG.2.2.10418.62400},
